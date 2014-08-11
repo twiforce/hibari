@@ -948,7 +948,8 @@ var CustomPlayer = function (data) {
     self.init();
 };
 
-function FilePlayer(data) {
+/* DEPRECATED */
+function FlashPlayer(data) {
     var self = this;
 
     self.initFlash = function (data) {
@@ -997,36 +998,6 @@ function FilePlayer(data) {
 
             self.player = $("#ytapiplayer")[0];
             resizeStuff();
-
-            self.pause = function () {
-                if (self.player && self.player.pause)
-                    self.player.pause();
-            };
-
-            self.play = function () {
-                // Why is it play2?  What happened to play1?
-                if (self.player && self.player.play2)
-                    self.player.play2();
-            };
-
-            self.getTime = function (cb) {
-                cb(self.currentTime);
-            };
-
-            self.seek = function (to) {
-                if (self.player && self.player.seek) {
-                    self.player.seek(Math.floor(to));
-                }
-            };
-
-            self.getVolume = function (cb) {
-                cb(self.volume);
-            };
-
-            self.setVolume = function (vol) {
-                if (self.player && self.player.setVolume)
-                    self.player.setVolume(vol);
-            };
         });
     };
 
@@ -1095,53 +1066,130 @@ function FilePlayer(data) {
     };
 
     self.pause = function () {
-        if (self.player) {
+        if (self.player && self.player.pause)
             self.player.pause();
-        }
     };
 
     self.play = function () {
-        if (self.player) {
-            self.player.play();
-        }
+        // Why is it play2?  What happened to play1?
+        if (self.player && self.player.play2)
+            self.player.play2();
     };
 
-    self.getTime = function (callback) {
-        if (self.player) {
-            callback(self.player.currentTime);
-        }
+    self.getTime = function (cb) {
+        cb(self.currentTime);
     };
 
-    self.seek = function (time) {
-        if (self.player) {
-            try {
-                self.player.currentTime = time;
-            } catch (e) {
-            }
+    self.seek = function (to) {
+        if (self.player && self.player.seek) {
+            self.player.seek(Math.floor(to));
         }
     };
 
     self.getVolume = function (cb) {
-        if (self.player) {
-            if (self.player.muted) {
-                cb(0);
-            } else {
-                cb(self.player.volume);
-            }
-        }
+        cb(self.volume);
     };
 
     self.setVolume = function (vol) {
-        if (self.player) {
-            self.player.volume = vol;
-        }
+        if (self.player && self.player.setVolume)
+            self.player.setVolume(vol);
+    };
+};
+
+var VJSPlayer = function (data) {
+    var self = this;
+    self.init = function (data) {
+        waitUntilDefined(window, "videojs", function () {
+            if (!data.url) {
+                return;
+            }
+
+            self.videoId = data.id;
+            self.videoURL = data.url;
+            var isAudio = data.meta.codec && data.meta.codec.match(/^mp3$|^vorbis$/);
+            var video;
+            if (isAudio) {
+                video = $("<audio/>");
+            } else {
+                video = $("<video/>")
+            }
+
+            video
+                .addClass("video-js vjs-default-skin")
+                .attr("src", self.videoURL)
+                .attr("controls", true)
+                .attr("autoplay", true)
+                .attr("preload", "auto")
+                .attr("id", "#ytapiplayer")
+                .attr("width", VWIDTH)
+                .attr("height", VHEIGHT)
+                .html("Your browser does not support HTML5 <code>&lt;video&gt;</code> tags :(");
+            removeOld(video);
+
+            videojs(video[0], {}, function () {
+                self.player = this;
+
+                self.player.on("pause", function () {
+                    if (CLIENT.leader) {
+                        sendVideoUpdate();
+                    }
+                });
+
+                self.player.on("play", function () {
+                    if (CLIENT.leader) {
+                        sendVideoUpdate();
+                    }
+                });
+
+                self.player.on("ended", function () {
+                    if (CLIENT.leader) {
+                        socket.emit("playNext");
+                    }
+                });
+
+                self.setVolume(VOLUME);
+                resizeStuff();
+            });
+
+            if (!Object.hasOwnProperty.call(self, "paused")) {
+                Object.defineProperty(self, "paused", {
+                    get: function () {
+                        return !!self.player && self.player.paused();
+                    }
+                });
+            }
+        });
     };
 
-    if (data.forceFlash) {
-        self.initFlash(data);
-    } else {
+    self.load = function (data) {
         self.init(data);
-    }
+    };
+
+    self.pause = function () {
+        self.player && self.player.pause();
+    };
+
+    self.play = function () {
+        self.player && self.player.play();
+    };
+
+    self.getTime = function (cb) {
+        self.player && cb(self.player.currentTime());
+    };
+
+    self.seek = function (to) {
+        self.player && self.player.currentTime(to);
+    };
+
+    self.getVolume = function (cb) {
+        self.player && cb(self.player.volume());
+    };
+
+    self.setVolume = function (vol) {
+        self.player && self.player.volume(vol);
+    };
+
+    self.init(data);
 };
 
 function handleMediaUpdate(data) {
@@ -1241,10 +1289,10 @@ var constructors = {
     "jw": JWPlayer,
     "im": ImgurPlayer,
     "cu": CustomPlayer,
-    "rt": FilePlayer,
-    "rv": FilePlayer,
-    "fl": FilePlayer,
-    "fi": FilePlayer
+    "rt": FlashPlayer,
+    "fl": FlashPlayer,
+    "fi": VJSPlayer,
+    "vj": VJSPlayer
 };
 
 function loadMediaPlayer(data) {

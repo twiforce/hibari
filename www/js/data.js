@@ -166,7 +166,7 @@ if (["never", "onlyping", "always"].indexOf(USEROPTS.boop) === -1) {
 var VOLUME = parseFloat(getOrDefault("volume", 1));
 
 var NO_WEBSOCKETS = USEROPTS.altsocket;
-var NO_VIMEO = Boolean(location.host.match("cytu.be"));
+var NO_VIMEO = true;//Boolean(location.host.match("cytu.be"));
 
 var JSPREF = getOpt("channel_js_pref") || {};
 

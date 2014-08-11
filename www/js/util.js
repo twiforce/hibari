@@ -2698,7 +2698,7 @@ function formatScriptAccessPrefs() {
 */
 function vimeoSimulator2014(data) {
     /* Vimeo Simulator uses the raw file player */
-    data.type = "fi";
+    data.type = "vj";
 
     /* For browsers that don't support native h264 playback */
     if (USEROPTS.no_h264) {
@@ -2735,7 +2735,7 @@ function vimeoSimulator2014(data) {
 
 function googlePlusSimulator2014(data) {
     /* Google+ Simulator uses the raw file player */
-    data.type = "fi";
+    data.type = "vj";
 
     if (!data.meta.gpdirect) {
         data.url = "";

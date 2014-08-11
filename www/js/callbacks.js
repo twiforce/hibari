@@ -867,11 +867,8 @@ Callbacks = {
         }
 
         if (data.type === "fi") {
-            if (USEROPTS.no_h264 && data.meta.codec === "mov/h264") {
-                data.forceFlash = true;
-            }
-
             data.url = data.id;
+            data.type = "vj";
         }
 
         if (NO_VIMEO && data.type === "vi" && data.meta.direct) {
