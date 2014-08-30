@@ -307,6 +307,8 @@ function addUserDropdown(entry) {
     }
 
     var showdd = function(ev) {
+        // Workaround for Chrome
+        if (ev.shiftKey) return true;
         ev.preventDefault();
         if(menu.css("display") == "none") {
             $(".user-dropdown").hide();
@@ -863,6 +865,7 @@ function handleModPermissions() {
     $("#cs-voteskip_ratio").val(CHANNEL.opts.voteskip_ratio);
     $("#cs-allow_dupes").val(CHANNEL.opts.allow_dupes);
     $("#cs-torbanned").val(CHANNEL.opts.torbanned);
+    $("#cs-allow_ascii_control").val(CHANNEL.opts.allow_ascii_control);
     (function() {
         if(typeof CHANNEL.opts.maxlength != "number") {
             $("#cs-maxlength").val("");
