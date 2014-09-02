@@ -33,7 +33,7 @@ Callbacks = {
         }
 
         $("<div/>").addClass("server-msg-reconnect")
-            .text("Connected")
+            .text("Соединение установлено")
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
@@ -43,7 +43,7 @@ Callbacks = {
             return;
         $("<div/>")
             .addClass("server-msg-disconnect")
-            .text("Disconnected from server.  Attempting reconnection...")
+            .text("Соединение разорвано, переподключаюсь...")
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
@@ -82,7 +82,7 @@ Callbacks = {
     kick: function(data) {
         KICKED = true;
         $("<div/>").addClass("server-msg-disconnect")
-            .text("Kicked: " + data.reason)
+            .text("Выброшен: " + data.reason)
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
@@ -97,12 +97,12 @@ Callbacks = {
 
     needPassword: function (wrongpw) {
         var div = $("<div/>");
-        $("<strong/>").text("Channel Password")
+        $("<strong/>").text("Введите пароль")
             .appendTo(div);
         if (wrongpw) {
             $("<br/>").appendTo(div);
             $("<span/>").addClass("text-error")
-                .text("Wrong Password")
+                .text("Неверный пароль")
                 .appendTo(div);
         }
 
@@ -111,7 +111,7 @@ Callbacks = {
             .appendTo(div);
         var submit = $("<button/>").addClass("btn btn-xs btn-default btn-block")
             .css("margin-top", "5px")
-            .text("Submit")
+            .text("Отправить")
             .appendTo(div);
         var parent = chatDialog(div);
         parent.attr("id", "needpw");
@@ -155,31 +155,31 @@ Callbacks = {
                 div.parent().remove();
             })
             .html("&times;");
-        $("<h4/>").appendTo(div).text("Unregistered channel");
+        $("<h4/>").appendTo(div).text("Свободная касса!");
         $("<p/>").appendTo(div)
-            .html("This channel is not registered to a CyTube account.  You can still " +
-                  "use it, but some features will not be available.  To register a " +
-                  "channel to your account, visit your <a href='/account/channels'>" +
-                  "channels</a> page.");
+            .html("Эта комната никем не зарегистрирована. Вы можете пользоваться ей и " +
+                  "дальше, но некоторые возможности будут ограничены. Если вы хотите " +
+                  "зарегистрировать эту комнату и стать ее владельцем, посетите страницу " +
+                  "<a href='/account/channels'>Мои комнаты</a>.");
     },
 
     registerChannel: function(data) {
         if ($("#chanregisterbtn").length > 0) {
-            $("#chanregisterbtn").text("Register it")
+            $("#chanregisterbtn").text("Зарегистрировать!")
                 .attr("disabled", false);
         }
         if(data.success) {
             $("#chregnotice").remove();
         }
         else {
-            makeAlert("Error", data.error, "alert-danger")
+            makeAlert("Ошибка", data.error, "alert-danger")
                 .insertAfter($("#chregnotice"));
         }
     },
 
     unregisterChannel: function(data) {
         if(data.success) {
-            alert("Channel unregistered");
+            alert("Канал разрегистрирован.");
         }
         else {
             alert(data.error);
@@ -400,7 +400,7 @@ Callbacks = {
             setupChanlogFilter(data.data);
             filterChannelLog();
         } else {
-            $("#cs-chanlog-text").text("Error reading channel log");
+            $("#cs-chanlog-text").text("Ошибка чтения лога комнаты");
         }
     },
 
@@ -436,7 +436,7 @@ Callbacks = {
             $("<a/>").addClass("dropdown-toggle")
                 .attr("data-toggle", "dropdown")
                 .attr("href", "javascript:void(0)")
-                .html("Set Rank <b class='caret'></b>")
+                .html("Ранг <b class='caret'></b>")
                 .appendTo(li);
             var menu = $("<ul/>").addClass("dropdown-menu")
                 .appendTo(li);
@@ -451,11 +451,11 @@ Callbacks = {
                     .appendTo(li);
             }
 
-            addRank(0, "<span class='userlist_guest'>Guest</span>");
-            addRank(1, "<span>Registered</span>");
-            addRank(2, "<span class='userlist_op'>Moderator</span>");
-            addRank(3, "<span class='userlist_owner'>Admin</span>");
-            addRank(255, "<span class='userlist_siteadmin'>Superadmin</span>");
+            addRank(0, "<span class='userlist_guest'>Гость</span>");
+            addRank(1, "<span>Пользователь</span>");
+            addRank(2, "<span class='userlist_op'>Модератор</span>");
+            addRank(3, "<span class='userlist_owner'>Владелец</span>");
+            addRank(255, "<span class='userlist_siteadmin'>Администратор</span>");
         }
     },
 
@@ -478,7 +478,7 @@ Callbacks = {
                     .addClass("navbar-text pull-right")
                     .insertAfter($("#loginform"));
 
-                $("<span/>").attr("id", "welcome").text("Welcome, " + CLIENT.name)
+                $("<span/>").attr("id", "welcome").text("Привет, " + CLIENT.name + "!")
                     .appendTo(logoutform);
                 $("<span/>").html("&nbsp;&middot;&nbsp;").appendTo(logoutform);
                 var domain = $("#loginform").attr("action").replace("/login", "");
@@ -495,10 +495,7 @@ Callbacks = {
     /* REGION Chat */
     usercount: function(count) {
         CHANNEL.usercount = count;
-        var text = count + " connected user";
-        if(count != 1) {
-            text += "s";
-        }
+        var text = count + " онлайн";
         $("#usercount").text(text);
     },
 
@@ -717,8 +714,8 @@ Callbacks = {
         for(var i = 0; i < data.length; i++) {
             var li = makeQueueEntry(data[i], false);
             li.attr("title", data[i].queueby
-                                ? ("Added by: " + data[i].queueby)
-                                : "Added by: Unknown");
+                                ? ("Добавил " + data[i].queueby)
+                                : "Добавил аноним");
             li.appendTo(q);
         }
 
@@ -741,8 +738,8 @@ Callbacks = {
             li.hide();
             var q = $("#queue");
             li.attr("title", data.item.queueby
-                                ? ("Added by: " + data.item.queueby)
-                                : "Added by: Unknown");
+                                ? ("Добавил " + data.item.queueby)
+                                : "Добавил аноним");
             if (data.after === "prepend") {
                 li.prependTo(q);
                 li.show("fade", function () {
@@ -789,12 +786,12 @@ Callbacks = {
         var btn = li.find(".qbtn-tmp");
         if(btn.length > 0) {
             if(data.temp) {
-                btn.html(btn.html().replace("Make Temporary",
-                                            "Make Permanent"));
+                btn.html(btn.html().replace("Сделать временным",
+                                            "Сделать постоянным"));
             }
             else {
-                btn.html(btn.html().replace("Make Permanent",
-                                            "Make Temporary"));
+                btn.html(btn.html().replace("Сделать постоянным",
+                                            "Сделать временным"));
             }
         }
     },
@@ -858,7 +855,7 @@ Callbacks = {
         if (CHANNEL.opts.allow_voteskip)
             $("#voteskip").attr("disabled", false);
 
-        $("#currenttitle").text("Currently Playing: " + data.title);
+        $("#currenttitle").text(data.title);
 
         if (data.type != "sc" && PLAYER.type == "sc")
             // [](/goddamnitmango)
@@ -911,7 +908,7 @@ Callbacks = {
         if(CHANNEL.openqueue) {
             $("#qlockbtn").removeClass("btn-danger")
                 .addClass("btn-success")
-                .attr("title", "Playlist Unlocked");
+                .attr("title", "Очередь открыта");
             $("#qlockbtn").find("span")
                 .removeClass("glyphicon-lock")
                 .addClass("glyphicon-ok");
@@ -919,7 +916,7 @@ Callbacks = {
         else {
             $("#qlockbtn").removeClass("btn-success")
                 .addClass("btn-danger")
-                .attr("title", "Playlist Locked");
+                .attr("title", "Очередь закрыта");
             $("#qlockbtn").find("span")
                 .removeClass("glyphicon-ok")
                 .addClass("glyphicon-lock");
@@ -933,7 +930,7 @@ Callbacks = {
         $("<button/>").addClass("btn btn-default btn-sm btn-block")
             .css("margin-left", "0")
             .attr("id", "search_clear")
-            .text("Clear Results")
+            .text("Очистить")
             .click(function() {
                 clearSearchResults();
             })
@@ -968,7 +965,7 @@ Callbacks = {
     newPoll: function(data) {
         Callbacks.closePoll();
         var pollMsg = $("<div/>").addClass("poll-notify")
-            .html(data.initiator + " opened a poll: \"" + data.title + "\"")
+            .html(data.initiator + " создал опрос: \"" + data.title + "\"")
             .appendTo($("#messagebuffer"));
         scrollChat();
 
@@ -977,7 +974,7 @@ Callbacks = {
             .appendTo(poll)
             .click(function() { poll.remove(); });
         if(hasPermission("pollctl")) {
-            $("<button/>").addClass("btn btn-danger btn-sm pull-right").text("End Poll")
+            $("<button/>").addClass("btn btn-danger btn-sm pull-right").text("Завершить опрос")
                 .appendTo(poll)
                 .click(function() {
                     socket.emit("closePoll")
@@ -1098,10 +1095,10 @@ setupCallbacks = function() {
 
 try {
     if (typeof io === "undefined") {
-        makeAlert("Uh oh!", "It appears the connection to <code>" + IO_URL + "</code> " +
-                            "has failed.  If this error persists, a firewall or " +
-                            "antivirus is likely blocking the connection, or the " +
-                            "server is down.", "alert-danger")
+        makeAlert("Ой, мамочки!", "Кажется, соединение с <code>" + IO_URL + "</code> " +
+                            "было разорвано. Если ошибка повторяется, возможно, ваш " +
+                            "антивирус или файерволл блокирует соединение. Ну или сайт " +
+                            "просто сломался. Такое тоже случается.", "alert-danger")
             .appendTo($("#announcements"));
         throw false;
     }
