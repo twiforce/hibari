@@ -1,8 +1,8 @@
 mixin email(e, k)
-  button.btn.btn-xs.btn-default(onclick="showEmail(this, '#{e}', '#{k}')") Show Email
+  button.btn.btn-xs.btn-default(onclick="showEmail(this, '#{e}', '#{k}')") Показать email
 
 doctype html
-html(lang="en")
+html(lang="ru")
   head
     include head
     mixin head()
@@ -18,8 +18,8 @@ html(lang="en")
       section#mainpage
         .container
           .col-md-8.col-md-offset-2
-            h1 Contact
-            h3 Email
+            h1 Контакты
+            h3 Почта
             each contact in contacts
               strong= contact.name
               p.text-muted= contact.title
@@ -28,7 +28,7 @@ html(lang="en")
               hr
             h3 IRC
             p.
-              The developer and other knowledgeable people are usually available on IRC for quick questions or comments.  Official support can be provided for cytu.be and synchtube.6irc.net at <a href="http://webchat.6irc.net/?channels=cytube">irc.6irc.net#cytube</a>.  These people can also address general questions about the software, but cannot provide technical support for third-party websites using this code.
+              Вы можете пообщаться с разработчиками оригинального sync/cytube на <a href="http://webchat.6irc.net/?channels=cytube">irc.6irc.net#cytube</a>.
     include footer
     mixin footer()
     script(type="text/javascript").
