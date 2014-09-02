@@ -760,6 +760,43 @@ var JWPlayer = function (data) {
     waitUntilDefined(window, "jwplayer", function () { self.init(); });
 };
 
+var CybergameTVPlayer = function (data) {
+    var self = this;
+    self.videoId = data.id;
+    self.videoLength = data.seconds;
+    self.init = function () {
+        var iframe = $("<iframe/>");
+        removeOld(iframe);
+        iframe.attr("width", VWIDTH);
+        iframe.attr("height", VHEIGHT);
+        var prto = location.protocol;
+        iframe.attr("src", prto+"//api.cybergame.tv/p/embed.php?c="+self.videoId+"&w=100pc&h=100pc&type=embed&auto=true");
+        iframe.attr("frameborder", "0");
+        iframe.attr("scrolling", "no");
+        iframe.css("border", "none");
+    };
+
+    self.load = function (data) {
+        self.videoId = data.id;
+        self.videoLength = data.seconds;
+        self.init();
+    };
+
+    self.pause = function () { };
+
+    self.play = function () { };
+
+    self.getTime = function () { };
+
+    self.seek = function () { };
+
+    self.getVolume = function () { };
+
+    self.setVolume = function () { };
+
+    self.init();
+};
+
 var UstreamPlayer = function (data) {
     var self = this;
     self.videoId = data.id;
@@ -1084,6 +1121,7 @@ var constructors = {
     "sc": SoundcloudPlayer,
     "li": LivestreamPlayer,
     "tw": TwitchTVPlayer,
+    "cg": CybergameTVPlayer,
     "us": UstreamPlayer,
     "jw": JWPlayer,
     "im": ImgurPlayer,

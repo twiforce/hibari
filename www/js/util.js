@@ -46,6 +46,8 @@ function formatURL(data) {
             return "http://livestream.com/" + data.id;
         case "tw":
             return "http://twitch.tv/" + data.id;
+        case "cg":
+            return "http://cybergame.tv/" + data.id;
         case "rt":
             return data.id;
         case "jw":
@@ -1230,6 +1232,13 @@ function parseMediaLink(url) {
         return {
             id: m[1],
             type: "tw"
+        };
+    }
+
+	if((m = url.match(/cybergame\.tv\/([^\?&#]+)/))) {
+        return {
+            id: m[1],
+            type: "cg"
         };
     }
 
