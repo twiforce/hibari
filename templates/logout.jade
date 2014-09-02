@@ -1,5 +1,5 @@
 doctype html
-html(lang="en")
+html(lang="ru")
   head
     include head
     mixin head()
@@ -15,9 +15,9 @@ html(lang="en")
       section#mainpage.container
         .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
           .alert.alert-info.center.messagebox
-            strong Logged out
+            strong Вы успешно вышли из своего профиля.
             p
               if redirect
-                a(href=redirect) Return to previous page
+                a(href=redirect) Вернуться на предыдущую страницу
     include footer
     mixin footer()

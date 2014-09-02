@@ -1,5 +1,5 @@
 doctype html
-html(lang="en")
+html(lang="ru")
   head
     include head
     mixin head()
@@ -17,32 +17,32 @@ html(lang="en")
         if wasAlreadyLoggedIn
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             .alert.alert-info.messagebox.center
-              h3(style="margin: 5px auto") Logged in as #{loginName}
+              h3(style="margin: 5px auto") Привет, #{loginName}!
         else if !loggedIn
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             if loginError
               .alert.alert-danger.messagebox.center
-                strong Login Failed
+                strong Неудачная авторизация
                 p= loginError
-            h2 Login
+            h2 Авторизация
             form(role="form", action="/login", method="post")
               if redirect
                 input(type="hidden", name="redirect", value=redirect)
               .form-group
-                label(for="username") Username
+                label(for="username") Логин
                 input#username.form-control(type="text", name="name")
               .form-group
-                label(for="password") Password
+                label(for="password") Пароль
                 input#password.form-control(type="password", name="password")
-                a(href="/account/passwordreset") Forgot password?
-              button.btn.btn-success.btn-block(type="submit") Login
+                a(href="/account/passwordreset") Забыли пароль?
+              button.btn.btn-success.btn-block(type="submit") Авторизоваться
         else
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             .alert.alert-success.messagebox.center
-              strong Login Successful
-              p Logged in as #{loginName}
+              strong Успешная авторизация
+              p Привет, #{loginName}!
                 if redirect
                   br
-                  a(href=redirect) Return to previous page
+                  a(href=redirect) Вернуться на предыдущую страницу
     include footer
     mixin footer()
