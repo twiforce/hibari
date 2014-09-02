@@ -123,7 +123,7 @@ function formatUserlistItem(div) {
         }
         if (meta.aliases) {
             $("<br/>").appendTo(profile);
-            $("<em/>").text("aliases: " + meta.aliases.join(", ")).appendTo(profile);
+            $("<em/>").text("алиасы: " + meta.aliases.join(", ")).appendTo(profile);
         }
         $("<hr/>").css("margin-top", "5px").css("margin-bottom", "5px").appendTo(profile);
         $("<p/>").text(data.profile.text).appendTo(profile);
