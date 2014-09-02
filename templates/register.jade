@@ -1,5 +1,5 @@
 doctype html
-html(lang="en")
+html(lang="ru")
   head
     include head
     mixin head()
@@ -17,37 +17,37 @@ html(lang="en")
         if loggedIn
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             .alert.alert-danger.messagebox.center
-              strong Already logged in
+              strong Вы уже авторизованы
               p.
-                You are already logged in.  If you intend to register a new account, please <a href="/logout?redirect=/register">Logout</a> first.
+                Вы уже авториованы. Если вы хотите зарегистрироваться, сначала <a href="/logout?redirect=/register">выйдите</a> из своего профиля.
               // TODO Link to My Account page
         else if !registered
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             if registerError
               .alert.alert-danger.messagebox.center
-                strong Registration Failed
+                strong Ошибка при регистрации
                 p= registerError
-            h2 Register
+            h2 Регистрация
             form(role="form", action="/register", method="post", onsubmit="return verify()")
               .form-group
-                label.control-label(for="username") Username
+                label.control-label(for="username") Логин
                 input#username.form-control(type="text", name="name")
               .form-group
-                label.control-label(for="password") Password
+                label.control-label(for="password") Пароль
                 input#password.form-control(type="password", name="password", onkeyup="checkPasswords()")
               .form-group
-                label.control-label(for="password_confirm") Confirm Password
+                label.control-label(for="password_confirm") Пароль еще раз
                 input#password_confirm.form-control(type="password", onkeyup="checkPasswords()")
               .form-group
-                label.control-label(for="email") Email (optional)
+                label.control-label(for="email") Email (необязательно)
                 input#email.form-control(type="email", name="email")
-                p Providing an email address is optional and will allow you to recover your account via email if you forget your password.  Your address will not be shared with anyone.
-              button#registerbtn.btn.btn-success.btn-block(type="submit") Register
+                p Заполнив это поле, у вас останется возможность восстановить свой аккаунт, если вы вдруг забудете пароль. Ваш адрес нигде не будет отображаться и используется только для восстановления пароля.
+              button#registerbtn.btn.btn-success.btn-block(type="submit") Зарегистрироваться!
         else
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             .alert.alert-success.messagebox.center
-              strong Registration Successful
-              p Thanks for registering, #{registerName}!  Now you can <a href="/login">Login</a> to use your account.
+              strong Успешная регистрация
+              p Добро пожаловать, #{registerName}!  Теперь вы можете <a href="/login">войти</a> в свой аккаунт.
     include footer
     mixin footer() 
     script(src="/js/jquery.js")
@@ -64,15 +64,15 @@ html(lang="en")
           $("#username").parent().addClass("has-error");
           $("<p/>").addClass("text-danger")
             .attr("id", "usernameerror")
-            .text("Username must not be empty")
+            .text("Имя пользователя не может быть пустым.")
             .insertAfter($("#username"));
           return false;
         } else if (!(/^[-\w\u00c0-\u00ff]{1,20}$/).test(name)) {
           $("#username").parent().addClass("has-error");
           $("<p/>").addClass("text-danger")
             .attr("id", "usernameerror")
-            .text("Username must consist of 1-20 characters a-Z, A-Z, 0-9 " +
-                  ", -, or _.")
+            .text("Имя пользователя должно состоять из 1-20 символов a-Z, A-Z, 0-9 " +
+                  ", -, или _.")
             .insertAfter($("#username"));
           return false;
         } else {
@@ -89,7 +89,7 @@ html(lang="en")
           $("#password").parent().addClass("has-error");
           $("<p/>").addClass("text-danger")
             .attr("id", "passwordempty")
-            .text("Password must not be empty")
+            .text("Пароль не может быть пустым.")
             .insertAfter($("#password"));
           return false;
         } else {
@@ -99,7 +99,7 @@ html(lang="en")
             $("#password_confirm").parent().addClass("has-error");
             $("<p/>").addClass("text-danger")
               .attr("id", "passwordmismatch")
-              .text("Passwords do not match")
+              .text("Введенные пароли не совпадают.")
               .insertAfter($("#password_confirm"));
             return false;
           } else {
