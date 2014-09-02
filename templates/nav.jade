@@ -1,4 +1,4 @@
-- var links = { "/": "Home" }
+- var links = { }
 
 mixin navlink(page, title, active)
   if active
@@ -14,7 +14,8 @@ mixin navheader()
       span.icon-bar
       span.icon-bar
       span.icon-bar
-    a.navbar-brand(href="/")= siteTitle
+    a(href="/")
+      img(src="/img/header-logo-short.png")
 
 mixin navdefaultlinks(page)
   each t, p in links
@@ -23,18 +24,18 @@ mixin navdefaultlinks(page)
     else
       mixin navlink(p, t, false)
   li.dropdown
-    a.dropdown-toggle(href="#", data-toggle="dropdown") Account
+    a.dropdown-toggle(href="#", data-toggle="dropdown") Профиль
       b.caret
     ul.dropdown-menu
       if loggedIn
-        li: a(href="/logout?redirect=#{page}") Logout
+        li: a(href="/logout?redirect=#{page}") Выйти
         li.divider
-        li: a(href="/account/channels") Channels
-        li: a(href="/account/profile") Profile
-        li: a(href="/account/edit") Change Password/Email
+        li: a(href="/account/channels") Мои каналы
+        li: a(href="/account/profile") Настройки профиля
+        li: a(href="/account/edit") Настройки безопасности
       else
-        li: a(href="/login") Login
-        li: a(href="/register") Register
+        li: a(href="/login") Авторизоваться
+        li: a(href="/register") Зарегистрироваться
 
 mixin navloginlogout(redirect)
   if loggedIn
@@ -49,10 +50,10 @@ mixin navloginform(redirect)
     form#loginform.navbar-form.navbar-right(action="#{loginDomain}/login", method="post")
       input(type="hidden", name="redirect", value=redirect)
       .form-group
-        input#username.form-control(type="text", name="name", placeholder="Username")
+        input#username.form-control(type="text", name="name", placeholder="Логин")
       .form-group
-        input#password.form-control(type="password", name="password", placeholder="Password")
-      button#login.btn.btn-default(type="submit") Login
+        input#password.form-control(type="password", name="password", placeholder="Пароль")
+      button#login.btn.btn-default(type="submit") Авторизоваться
 
 mixin navlogoutform(redirect)
   if loginDomain == null
@@ -62,6 +63,6 @@ mixin navlogoutform(redirect)
   else
     - url = "logout"
   p#logoutform.navbar-text.pull-right
-    span#welcome Welcome, #{loginName}
+    span#welcome Привет, #{loginName}!
     span &nbsp;&middot;&nbsp;
-    a#logout.navbar-link(href="#{loginDomain}/#{url}") Logout
+    a#logout.navbar-link(href="#{loginDomain}/#{url}") Выйти
