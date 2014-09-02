@@ -734,6 +734,11 @@ var toggleUserlist = function () {
 $("#usercount").click(toggleUserlist);
 $("#userlisttoggle").click(toggleUserlist);
 
+$(document).on("click",".username", function () {
+    $("#chatline").val(($(this).text()) + $("#chatline").val());
+    $("#chatline").focus();
+});
+
 $(".add-temp").change(function () {
     $(".add-temp").prop("checked", $(this).prop("checked"));
 });
