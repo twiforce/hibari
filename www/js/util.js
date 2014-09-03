@@ -48,6 +48,8 @@ function formatURL(data) {
             return "http://twitch.tv/" + data.id;
         case "cg":
             return "http://cybergame.tv/" + data.id;
+        case "hb":
+            return "http://hitbox.tv/" + data.id;
         case "rt":
             return data.id;
         case "jw":
@@ -1235,10 +1237,17 @@ function parseMediaLink(url) {
         };
     }
 
-	if((m = url.match(/cybergame\.tv\/([^\?&#]+)/))) {
+    if((m = url.match(/cybergame\.tv\/([^\?&#]+)/))) {
         return {
             id: m[1],
             type: "cg"
+        };
+    }
+
+    if((m = url.match(/hitbox\.tv\/([^\?&#]+)/))) {
+        return {
+            id: m[1],
+            type: "hb"
         };
     }
 

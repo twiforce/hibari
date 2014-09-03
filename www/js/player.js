@@ -797,6 +797,43 @@ var CybergameTVPlayer = function (data) {
     self.init();
 };
 
+var HitboxTVPlayer = function (data) {
+    var self = this;
+    self.videoId = data.id;
+    self.videoLength = data.seconds;
+    self.init = function () {
+        var iframe = $("<iframe/>");
+        removeOld(iframe);
+        iframe.attr("width", VWIDTH);
+        iframe.attr("height", VHEIGHT);
+        var prto = location.protocol;
+        iframe.attr("src", prto+"//hitbox.tv/#!/embed/"+self.videoId+"?autoplay=true");
+        iframe.attr("frameborder", "0");
+        iframe.attr("scrolling", "no");
+        iframe.css("border", "none");
+    };
+
+    self.load = function (data) {
+        self.videoId = data.id;
+        self.videoLength = data.seconds;
+        self.init();
+    };
+
+    self.pause = function () { };
+
+    self.play = function () { };
+
+    self.getTime = function () { };
+
+    self.seek = function () { };
+
+    self.getVolume = function () { };
+
+    self.setVolume = function () { };
+
+    self.init();
+};
+
 var UstreamPlayer = function (data) {
     var self = this;
     self.videoId = data.id;
@@ -1122,6 +1159,7 @@ var constructors = {
     "li": LivestreamPlayer,
     "tw": TwitchTVPlayer,
     "cg": CybergameTVPlayer,
+    "hb": HitboxTVPlayer,
     "us": UstreamPlayer,
     "jw": JWPlayer,
     "im": ImgurPlayer,
