@@ -864,9 +864,9 @@ function handleModPermissions() {
     $("#cs-afk_timeout").val(CHANNEL.opts.afk_timeout);
     $("#cs-allow_voteskip").prop("checked", CHANNEL.opts.allow_voteskip);
     $("#cs-voteskip_ratio").val(CHANNEL.opts.voteskip_ratio);
-    $("#cs-allow_dupes").val(CHANNEL.opts.allow_dupes);
-    $("#cs-torbanned").val(CHANNEL.opts.torbanned);
-    $("#cs-allow_ascii_control").val(CHANNEL.opts.allow_ascii_control);
+    $("#cs-allow_dupes").prop("checked", CHANNEL.opts.allow_dupes);
+    $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
+    $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     (function() {
         if(typeof CHANNEL.opts.maxlength != "number") {
             $("#cs-maxlength").val("");
@@ -1293,7 +1293,7 @@ function parseMediaLink(url) {
         };
     }
 
-    if ((m = url.match(/docs\.google\.com\/file\/d\/([^\/]*)/))) {
+    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([^\/]*)/))) {
         return {
             id: m[1],
             type: "gd"
