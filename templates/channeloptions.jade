@@ -77,6 +77,10 @@ mixin adminoptions
       mixin rcheckbox-auto("cs-show_public", "Показывать канал на главной")
       mixin rcheckbox-auto("cs-torbanned", "Блокировать подключения из сети Tor")
       mixin rcheckbox-auto("cs-allow_ascii_control", "Разрешить символы ASCII (напр., перенос строки)")
+      mixin textbox-auto("cs-playlist_max_per_user", "Максимальное количество видео от пользователя")
+	   .form-group
+        .col-sm-8.col-sm-offset-4
+          span.text-info 0 для отключения
       .form-group
         .col-sm-8.col-sm-offset-4
           span.text-info Изменения сохраняются автоматически.
