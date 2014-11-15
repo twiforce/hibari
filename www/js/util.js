@@ -106,13 +106,13 @@ function formatUserlistItem(div) {
         if (profile)
             profile.remove();
 
-        var top = ev.clientY + 5// - name.position().top;
-        var left = ev.clientX;
+        var top = ev.clientY + 5;
+        var horiz = ev.clientX;
         profile = $("<div/>")
             .addClass("profile-box linewrap")
             .css("top", top + "px")
-            .css("left", left + "px")
             .appendTo(div);
+
         if(data.profile.image) {
             $("<img/>").addClass("profile-image")
                 .attr("src", data.profile.image)
@@ -131,12 +131,17 @@ function formatUserlistItem(div) {
         }
         $("<hr/>").css("margin-top", "5px").css("margin-bottom", "5px").appendTo(profile);
         $("<p/>").text(data.profile.text).appendTo(profile);
+
+        if ($("body").hasClass("synchtube")) horiz -= profile.outerWidth();
+        profile.css("left", horiz + "px")
     });
     name.mousemove(function(ev) {
-        var top = ev.clientY + 5// - name.position().top;
-        var left = ev.clientX;
-        profile.css("top", top + "px")
-            .css("left", left + "px")
+        var top = ev.clientY + 5;
+        var horiz = ev.clientX;
+
+        if ($("body").hasClass("synchtube")) horiz -= profile.outerWidth();
+        profile.css("left", horiz + "px")
+            .css("top", top + "px");
     });
     name.mouseleave(function() {
         profile.remove();
@@ -625,6 +630,7 @@ function showUserOptions() {
     $("#us-blink-title").val(USEROPTS.blink_title);
     $("#us-ping-sound").val(USEROPTS.boop);
     $("#us-sendbtn").prop("checked", USEROPTS.chatbtn);
+    $("#us-no-emotes").prop("checked", USEROPTS.no_emotes);
 
     $("#us-modflair").prop("checked", USEROPTS.modhat);
     $("#us-joinmessage").prop("checked", USEROPTS.joinmessage);
@@ -658,6 +664,7 @@ function saveUserOptions() {
     USEROPTS.blink_title          = $("#us-blink-title").val();
     USEROPTS.boop                 = $("#us-ping-sound").val();
     USEROPTS.chatbtn              = $("#us-sendbtn").prop("checked");
+    USEROPTS.no_emotes            = $("#us-no-emotes").prop("checked");
 
     if (CLIENT.rank >= 2) {
         USEROPTS.modhat      = $("#us-modflair").prop("checked");
@@ -867,6 +874,7 @@ function handleModPermissions() {
     $("#cs-allow_dupes").prop("checked", CHANNEL.opts.allow_dupes);
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
+    $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
     (function() {
         if(typeof CHANNEL.opts.maxlength != "number") {
             $("#cs-maxlength").val("");
@@ -915,6 +923,7 @@ function handlePermissionChange() {
     setVisible("#plmeta", hasPermission("seeplaylist"));
     $("#getplaylist").attr("disabled", !hasPermission("seeplaylist"));
 
+    setVisible("#showplaylistmanager", hasPermission("seeplaylist"));
     setVisible("#showmediaurl", hasPermission("playlistadd"));
     setVisible("#showcustomembed", hasPermission("playlistaddcustom"));
     $("#queue_next").attr("disabled", !hasPermission("playlistnext"));
@@ -1771,6 +1780,7 @@ function genPermissionsEditor() {
     makeOption("Добавить iframe в очередь", "playlistaddcustom", standard, CHANNEL.perms.playlistaddcustom + "");
     makeOption("Добавить файл по прямой ссылке", "playlistaddrawfile", standard, CHANNEL.perms.playlistaddrawfile + "");
     makeOption("Обходить максимальную продолжительность видео", "exceedmaxlength", standard, CHANNEL.perms.exceedmaxlength+"");
+    makeOption("Обходить максимальное количество добавляемых видео", "exceedmaxitems", standard, CHANNEL.perms.exceedmaxitems+"");
     makeOption("Добавить постоянное видео", "addnontemp", standard, CHANNEL.perms.addnontemp+"");
     makeOption("Сделать видео постоянным или временым", "settemp", standard, CHANNEL.perms.settemp+"");
     makeOption("Открыть или закрыть плейлист", "playlistlock", modleader, CHANNEL.perms.playlistlock+"");
@@ -1782,6 +1792,7 @@ function genPermissionsEditor() {
     makeOption("Голосовать", "pollvote", standard, CHANNEL.perms.pollvote+"");
     makeOption("Видеть результаты скрытого голосования", "viewhiddenpoll", standard, CHANNEL.perms.viewhiddenpoll+"");
     makeOption("Голосовать за пропуск", "voteskip", standard, CHANNEL.perms.voteskip+"");
+    makeOption("Видеть результаты голосования за пропуск", "viewvoteskip", standard, CHANNEL.perms.viewvoteskip+"");
 
     addDivider("Модерация");
     makeOption("Добавить или убрать лидера", "leaderctl", modplus, CHANNEL.perms.leaderctl+"");
@@ -1795,6 +1806,7 @@ function genPermissionsEditor() {
     makeOption("Импортировать смайлики", "emoteimport", modplus, CHANNEL.perms.emoteimport+"");
 
     addDivider("Разное");
+
     makeOption("Drink calls", "drink", modleader, CHANNEL.perms.drink+"");
     makeOption("Чат", "chat", noanon, CHANNEL.perms.chat+"");
     makeOption("Очистить чат", "chatclear", modleader, CHANNEL.perms.chatclear+"");
@@ -2772,6 +2784,7 @@ function googlePlusSimulator2014(data) {
         }
     }
 
-    data.url = data.meta.gpdirect[q];
+    data.url = data.meta.gpdirect[q].url;
+    data.contentType = data.meta.gpdirect[q].contentType;
     return data;
 }
