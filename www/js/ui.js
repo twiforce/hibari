@@ -520,19 +520,6 @@ if(m) {
     }
 }
 
-if (location.protocol === "https:") {
-    var title = "Warning";
-    var text = "You connected to this page via HTTPS.  Due to browser "+
-               "security policy, certain media players may throw warnings,"+
-               " while others may not work at all due to only being "+
-               "available over plain HTTP.<br>To encrypt your websocket "+
-               "traffic and API calls (logins, account management, etc) "+
-               "while loading this page over plain HTTP, enable the SSL "+
-               "option from the Options menu.";
-    makeAlert(title, text, "alert-warning")
-        .appendTo($("#announcements"));
-}
-
 /* channel ranks stuff */
 function chanrankSubmit(rank) {
     var name = $("#cs-chanranks-name").val();
@@ -757,3 +744,27 @@ $(".add-temp").change(function () {
 });
 
 applyOpts();
+
+(function () {
+    if (typeof window.MutationObserver === "function") {
+        var mr = new MutationObserver(function (records) {
+            records.forEach(function (record) {
+                if (record.type !== "childList") return;
+                if (!record.addedNodes || record.addedNodes.length === 0) return;
+
+                var elem = record.addedNodes[0];
+                if (elem.id === "ytapiplayer") handleVideoResize();
+            });
+        });
+
+        mr.observe($("#videowrap").find(".embed-responsive")[0], { childList: true });
+    } else {
+        /*
+         * DOMNodeInserted is deprecated.  This code is here only as a fallback
+         * for browsers that do not support MutationObserver
+         */
+        $("#videowrap").find(".embed-responsive")[0].addEventListener("DOMNodeInserted", function (ev) {
+            if (ev.target.id === "ytapiplayer") handleVideoResize();
+        });
+    }
+})();
