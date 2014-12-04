@@ -13,7 +13,7 @@ var VIMEO_FLASH = false;
 
 function removeOld(replace) {
     $("#sc_volume").remove();
-    replace = replace || $("<div/>");
+    replace = replace || $("<div/>").addClass("embed-responsive-item");
     var old = $("#ytapiplayer");
     replace.insertBefore(old);
     old.remove();
@@ -31,8 +31,6 @@ var YouTubePlayer = function (data) {
             self.theYouTubeDevsNeedToFixThisShit = false;
             var wmode = USEROPTS.wmode_transparent ? "transparent" : "opaque";
             self.player = new YT.Player("ytapiplayer", {
-                height: VHEIGHT,
-                width: VWIDTH,
                 videoId: data.id,
                 playerVars: {
                     autohide: 1,        // Autohide controls
@@ -45,7 +43,6 @@ var YouTubePlayer = function (data) {
                 events: {
                     onReady: function () {
                         PLAYER.setVolume(VOLUME);
-                        $("#ytapiplayer").width(VWIDTH).height(VHEIGHT);
                     },
                     onStateChange: function (ev) {
 
@@ -151,8 +148,6 @@ var VimeoPlayer = function (data) {
             if(USEROPTS.wmode_transparent)
                 iframe.attr("wmode", "transparent");
             iframe.css("border", "none");
-            iframe.width(VWIDTH);
-            iframe.height(VHEIGHT);
 
             $f(iframe[0]).addEvent("ready", function () {
                 self.player = $f(iframe[0]);
@@ -420,7 +415,14 @@ var DailymotionPlayer = function (data) {
 
     self.getVolume = function (cb) {
         if (self.player) {
-            cb(self.player.volume);
+            var volume = self.player.muted ? 0 : self.player.volume;
+            /*
+             * If the volume was changed by the UI slider, it will be in the range
+             * [0, 100], otherwise if it was only set by the API, it will be in [0, 1].
+             */
+            if (volume > 1) volume /= 100.0;
+
+            cb(volume);
         }
     };
 
@@ -441,14 +443,16 @@ var SoundcloudPlayer = function (data) {
     waitUntilDefined(window, "SC", function () {
         unfixSoundcloudShit();
         var iframe = $("<iframe/>");
-        removeOld(iframe);
+        removeOld();
+        iframe.appendTo($("#ytapiplayer"));
 
-        iframe.attr("id", "ytapiplayer");
+        iframe.attr("id", "scplayer");
         iframe.attr("src", "https://w.soundcloud.com/player/?url="+self.videoId);
-        iframe.css("width", "100%").attr("height", "166");
+        iframe.css("height", "166px");
         iframe.css("border", "none");
 
         var volslider = $("<div/>").attr("id", "sc_volume")
+            .css("top", "170px")
             .insertAfter(iframe);
 
         volslider.slider({
@@ -460,7 +464,7 @@ var SoundcloudPlayer = function (data) {
             }
         });
 
-        self.player = SC.Widget("ytapiplayer");
+        self.player = SC.Widget("scplayer");
 
         self.player.bind(SC.Widget.Events.READY, function () {
             self.player.load(self.videoId, { auto_play: true });
@@ -586,12 +590,12 @@ var TwitchTVPlayer = function (data) {
     self.videoId = data.id;
     self.videoLength = data.seconds;
     self.init = function () {
-        var url = "http://www.twitch.tv/widgets/live_embed_player.swf?channel="+self.videoId;
+        var url = "https://www-cdn.jtvnw.net/swflibs/TwitchPlayer.swf?channel="+self.videoId;
         var params = {
             allowFullScreen: "true",
             allowScriptAccess: "always",
             allowNetworking: "all",
-            movie: "http://www.twitch.tv/widgets/live_embed_player.swf",
+            movie: "https://www-cdn.jtvnw.net/swflibs/TwitchPlayer.swf",
             id: "live_embed_player_flash",
             flashvars: "hostname=www.twitch.tv&channel="+self.videoId+"&auto_play=true&start_volume=" + VOLUME
         };
@@ -701,17 +705,27 @@ var JWPlayer = function (data) {
 
         jwplayer("ytapiplayer").setup({
             file: self.videoURL,
-            width: VWIDTH,
-            height: VHEIGHT,
+            width: "100%",
+            height: "100%",
             autostart: true,
             type: data.contentType
         });
 
-        jwplayer().onReady(function () {
-            resizeStuff();
+        jwplayer().onReady(function() {
+            $("#ytapiplayer").addClass("embed-responsive-item");
+            if ($("#ytapiplayer")[0].tagName === "OBJECT") {
+                $("#ytapiplayer").parent().css("position", "absolute");
+            }
+            handleVideoResize();
         });
 
         jwplayer().onPlay(function() {
+            /* Somehow JWPlayer manages to have THE SAME PROBLEM AS SOUNDCLOUD.
+             * It seems to be impossible to set the volume before the video has
+             * started playing.  How this is so damn difficult to get right I will
+             * never understand.
+             */
+            self.setVolume(VOLUME);
             self.paused = false;
             if(CLIENT.leader)
                 sendVideoUpdate();
@@ -724,11 +738,15 @@ var JWPlayer = function (data) {
         jwplayer().onComplete(function() {
             socket.emit("playNext");
         });
-        self.setVolume(VOLUME);
     };
 
     self.load = function (data) {
         self.videoId = data.id;
+        if (data.url) {
+            self.videoURL = data.url;
+        } else {
+            self.videoURL = data.id;
+        }
         self.videoLength = data.seconds;
         self.init();
     };
@@ -849,8 +867,7 @@ var UstreamPlayer = function (data) {
         removeOld(iframe);
         iframe.attr("width", VWIDTH);
         iframe.attr("height", VHEIGHT);
-        var prto = location.protocol;
-        iframe.attr("src", prto+"//www.ustream.tv/embed/"+self.videoId+"?v=3&wmode=direct");
+        iframe.attr("src", "//www.ustream.tv/embed/"+self.videoId+"?v=3&wmode=direct");
         iframe.attr("frameborder", "0");
         iframe.attr("scrolling", "no");
         iframe.css("border", "none");
@@ -968,15 +985,18 @@ function FilePlayer(data) {
             video = $("<video/>")
         }
         video
+            .addClass("embed-responsive-item")
             .attr("src", self.videoURL)
             .attr("controls", "controls")
             .attr("id", "#ytapiplayer")
             .attr("width", VWIDTH)
             .attr("height", VHEIGHT)
+            .attr("autoplay", true)
             .html("Your browser does not support HTML5 <code>&lt;video&gt;</code> tags :(");
         video.error(function (err) {
             setTimeout(function () {
                 console.log("<video> tag failed, falling back to Flash");
+                console.log(err);
                 PLAYER = new JWPlayer(data);
                 PLAYER.type = "jw";
             }, 100);
@@ -1008,7 +1028,6 @@ function FilePlayer(data) {
             }
         };
         self.setVolume(VOLUME);
-        resizeStuff();
     };
 
     self.load = function (data) {

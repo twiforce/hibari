@@ -769,11 +769,17 @@ function showPollMenu() {
         .attr("type", "text")
         .appendTo(menu);
 
+<<<<<<< HEAD
     var lbl = $("<label/>").addClass("checkbox")
         .text("Скрыть результаты")
         .appendTo(menu);
+=======
+    var checkboxOuter = $("<div/>").addClass("checkbox").appendTo(menu);
+    var lbl = $("<label/>").text("Hide poll results")
+        .appendTo(checkboxOuter);
+>>>>>>> cf609948956069cf1f67caca5a01f8fc0cfc6325
     var hidden = $("<input/>").attr("type", "checkbox")
-        .appendTo(lbl);
+        .prependTo(lbl);
 
     $("<strong/>").text("Варианты ответа").appendTo(menu);
 
@@ -1007,7 +1013,6 @@ function handlePermissionChange() {
 
     $("#chatline").attr("disabled", !hasPermission("chat"));
     rebuildPlaylist();
-    resizeStuff();
 }
 
 function fixWeirdButtonAlignmentIssue() {
@@ -1451,20 +1456,14 @@ function addChatMessage(data) {
     var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
     // a message, it highlights messages from that user
-    div.data("sender", data.username);
+    var safeUsername = data.username.replace(/[^\w-]/g, '$');
+    div.addClass("chat-msg-" + safeUsername);
     div.appendTo($("#messagebuffer"));
     div.mouseover(function() {
-        $("#messagebuffer").children().each(function() {
-            var name = $(this).data("sender");
-            if(name == data.username) {
-                $(this).addClass("nick-hover");
-            }
-        });
+        $(".chat-msg-" + safeUsername).addClass("nick-hover");
     });
     div.mouseleave(function() {
-        $("#messagebuffer").children().each(function() {
-            $(this).removeClass("nick-hover");
-        });
+        $(".nick-hover").removeClass("nick-hover");
     });
     // Cap chatbox at most recent 100 messages
     if($("#messagebuffer").children().length > 100) {
@@ -1554,14 +1553,15 @@ function compactLayout() {
         $("body").removeClass("hd");
     }
 
-    setTimeout(resizeStuff, 500);
+    $("body").addClass("compact");
+    handleVideoResize();
 }
 
 function fluidLayout() {
     $(".container").removeClass("container").addClass("container-fluid");
     $("footer .container-fluid").removeClass("container-fluid").addClass("container");
     $("body").addClass("fluid");
-    resizeStuff();
+    handleVideoResize();
 }
 
 function synchtubeLayout() {
@@ -1625,7 +1625,7 @@ function hdLayout() {
     $("#mainpage").css("padding-top", "0");
 
     $("body").addClass("hd");
-    setTimeout(resizeStuff, 500);
+    handleVideoResize();
 }
 
 function chatOnly() {
@@ -1653,32 +1653,45 @@ function chatOnly() {
         });
     setVisible("#showchansettings", CLIENT.rank >= 2);
     $("body").addClass("chatOnly");
-    resizeStuff();
+    handleWindowResize();
 }
 
-function resizeStuff() {
+function handleWindowResize() {
     if ($("body").hasClass("chatOnly")) {
         var h = $("body").outerHeight() - $("#chatline").outerHeight() -
                 $("#chatheader").outerHeight();
         $("#messagebuffer").outerHeight(h);
         $("#userlist").outerHeight(h);
         return;
+    } else {
+        handleVideoResize();
     }
-    VWIDTH = $("#videowrap").width() + "";
-    VHEIGHT = Math.floor(parseInt(VWIDTH) * 9 / 16 + 1) + "";
-    $("#ytapiplayer").width(VWIDTH).height(VHEIGHT);
-
-    // Only execute if we are on a fluid layout
-    if (!$("body").hasClass("fluid")) {
-        return;
-    }
-
-    var h = parseInt(VHEIGHT) - $("#chatline").outerHeight() - 1;
-    $("#messagebuffer").height(h);
-    $("#userlist").height(h);
 }
 
-$(window).resize(resizeStuff);
+function handleVideoResize() {
+    if ($("#ytapiplayer").length === 0) return;
+
+    var intv, ticks = 0;
+    var resize = function () {
+        if (++ticks > 10) clearInterval(intv);
+        if ($("#ytapiplayer").parent().height() === 0) return;
+        clearInterval(intv);
+
+        var responsiveFrame = $("#ytapiplayer").parent();
+        var height = responsiveFrame.outerHeight() - $("#chatline").outerHeight() - 2;
+        $("#messagebuffer").height(height);
+        $("#userlist").height(height);
+
+        $("#ytapiplayer").attr("height", VHEIGHT = responsiveFrame.outerHeight());
+        $("#ytapiplayer").attr("width", VWIDTH = responsiveFrame.outerWidth());
+    };
+
+    if ($("#ytapiplayer").height() > 0) resize();
+    else intv = setInterval(resize, 500);
+}
+
+$(window).resize(handleWindowResize);
+handleWindowResize();
 
 function removeVideo() {
     try {
@@ -2279,8 +2292,7 @@ function formatCSChatFilterList() {
                 .appendTo(wrap);
             var addTextbox = function (placeholder) {
                 var div = $("<div/>").addClass("form-group").appendTo(form)
-                    .css("margin-right", "10px")
-                    .css("max-width", "25%");
+                    .css("margin-right", "10px");
                 var input = $("<input/>").addClass("form-control")
                     .attr("type", "text")
                     .attr("placeholder", placeholder)
@@ -2581,13 +2593,13 @@ function fallbackRaw(data) {
     $("video").each(function () {
         killVideoUntilItIsDead($(this));
     });
+    $("audio").each(function () {
+        killVideoUntilItIsDead($(this));
+    });
     data.type = "fl";
     data.url = data.direct.sd.url;
     PLAYER.player = undefined;
     PLAYER = new FlashPlayer(data);
-    if ($("#ytapiplayer").height() != VHEIGHT) {
-        resizeStuff();
-    }
 
     handleMediaUpdate(data);
 }
