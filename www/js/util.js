@@ -769,15 +769,9 @@ function showPollMenu() {
         .attr("type", "text")
         .appendTo(menu);
 
-<<<<<<< HEAD
-    var lbl = $("<label/>").addClass("checkbox")
-        .text("Скрыть результаты")
-        .appendTo(menu);
-=======
     var checkboxOuter = $("<div/>").addClass("checkbox").appendTo(menu);
-    var lbl = $("<label/>").text("Hide poll results")
+    var lbl = $("<label/>").text("Скрыть результаты")
         .appendTo(checkboxOuter);
->>>>>>> cf609948956069cf1f67caca5a01f8fc0cfc6325
     var hidden = $("<input/>").attr("type", "checkbox")
         .prependTo(lbl);
 
