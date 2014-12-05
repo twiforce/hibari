@@ -480,7 +480,7 @@ function addQueueButtons(li) {
     // Play
     if(hasPermission("playlistjump")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-play")
-            .html("<span class='glyphicon glyphicon-play'></span>Воспроизвести")
+            .html("<span class='glyphicon glyphicon-play'></span> Вне очереди")
             .click(function() {
                 socket.emit("jumpTo", li.data("uid"));
             })
@@ -489,7 +489,7 @@ function addQueueButtons(li) {
     // Queue next
     if(hasPermission("playlistmove")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-next")
-            .html("<span class='glyphicon glyphicon-share-alt'></span>Добавить следующим")
+            .html("<span class='glyphicon glyphicon-share-alt'></span> Следующее")
             .click(function() {
                 socket.emit("moveMedia", {
                     from: li.data("uid"),
@@ -500,9 +500,9 @@ function addQueueButtons(li) {
     }
     // Temp/Untemp
     if(hasPermission("settemp")) {
-        var tempstr = li.data("temp")?"Сделать временным":"Сделать постоянным";
+        var tempstr = li.data("temp")?"Закрепить":"Открепить";
         $("<button/>").addClass("btn btn-xs btn-default qbtn-tmp")
-            .html("<span class='glyphicon glyphicon-flag'></span>" + tempstr)
+            .html("<span class='glyphicon glyphicon-flag'></span> " + tempstr)
             .click(function() {
                 socket.emit("setTemp", {
                     uid: li.data("uid"),
@@ -514,7 +514,7 @@ function addQueueButtons(li) {
     // Delete
     if(hasPermission("playlistdelete")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-delete")
-            .html("<span class='glyphicon glyphicon-trash'></span>Удалить")
+            .html("<span class='glyphicon glyphicon-trash'></span> Удалить")
             .click(function() {
                 socket.emit("delete", li.data("uid"));
             })

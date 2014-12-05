@@ -783,12 +783,12 @@ Callbacks = {
         var btn = li.find(".qbtn-tmp");
         if(btn.length > 0) {
             if(data.temp) {
-                btn.html(btn.html().replace("Сделать временным",
-                                            "Сделать постоянным"));
+                btn.html(btn.html().replace("Открепить",
+                                            "Закрепить"));
             }
             else {
-                btn.html(btn.html().replace("Сделать постоянным",
-                                            "Сделать временным"));
+                btn.html(btn.html().replace("Закрепить",
+                                            "Открепить"));
             }
         }
     },
