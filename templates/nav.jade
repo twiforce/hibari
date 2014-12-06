@@ -51,9 +51,8 @@ mixin navloginform(redirect)
       input(type="hidden", name="redirect", value=redirect)
       .form-group
         input#username.form-control(type="text", name="name", placeholder="Логин")
-      .form-group
         input#password.form-control(type="password", name="password", placeholder="Пароль")
-      button#login.btn.btn-default(type="submit") Авторизоваться
+        button#login.btn.btn-default(type="submit") Авторизоваться
 
 mixin navlogoutform(redirect)
   if loginDomain == null
