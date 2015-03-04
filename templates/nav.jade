@@ -60,7 +60,6 @@ mixin navloginform(redirect)
             input(type="checkbox", name="remember")
             span.navbar-text-nofloat Remember me
         button#login.btn.btn-default(type="submit") Авторизоваться
-      button#login.btn.btn-default(type="submit") Login
   .visible-md
     p#loginform.navbar-text.pull-right
       a#login.navbar-link(href="#{loginDomain}/login?dest=#{encodeURIComponent(baseUrl + redirect)}") Авторизоваться

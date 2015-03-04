@@ -58,7 +58,7 @@ http:
   # Use express-minify to minify CSS and Javascript
   minify: false
   # Max-Age for caching.  Value should be an integer in milliseconds or a string accepted by
-  # the `ms` module.  Set to 0 to disable caching.>>>>>>>
+  # the `ms` module.  Set to 0 to disable caching.
   max-age: '7d'
   # Set to false to disable gzip compression
   gzip: true
