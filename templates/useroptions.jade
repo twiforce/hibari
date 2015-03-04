@@ -35,6 +35,7 @@ mixin us-general
             option(value="/css/themes/slate.css") Slate
             option(value="/css/themes/cyborg.css") Cyborg
             option(value="/css/themes/holo.css") Holo
+            option(value="/css/themes/modern.css") Modern
       .form-group
         label.control-label.col-sm-4(for="#us-layout") Раскладка
         .col-sm-8
@@ -79,7 +80,7 @@ mixin us-playback
       mixin rcheckbox("us-playlistbuttons", "Спрятать кнопки плейлиста")
       mixin rcheckbox("us-oldbtns", "Старый стиль кнопок плейлиста")
       .form-group
-        label.control-label.col-sm-4(for="#us-default-quality") Стандартное качество YouTube/Vimeo/Dailymotion
+        label.control-label.col-sm-4(for="#us-default-quality") Стандартное качество
         .col-sm-8
           select#us-default-quality.form-control
             option(value="auto") Авто

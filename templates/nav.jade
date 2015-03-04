@@ -28,14 +28,14 @@ mixin navdefaultlinks(page)
       b.caret
     ul.dropdown-menu
       if loggedIn
-        li: a(href="/logout?redirect=#{page}") Выйти
+        li: a(href="/logout?dest=#{encodeURIComponent(baseUrl + page)}&_csrf=#{csrfToken}") Выйти
         li.divider
         li: a(href="/account/channels") Мои каналы
         li: a(href="/account/profile") Настройки профиля
-        li: a(href="/account/edit") Настройки безопасности
+        li: a(href="#{loginDomain}/account/edit") Настройки безопасности
       else
-        li: a(href="/login") Авторизоваться
-        li: a(href="/register") Зарегистрироваться
+        li: a(href="#{loginDomain}/login?dest=#{encodeURIComponent(baseUrl + page)}") Авторизоваться
+        li: a(href="#{loginDomain}/register") Зарегистрироваться
 
 mixin navloginlogout(redirect)
   if loggedIn
@@ -44,24 +44,30 @@ mixin navloginlogout(redirect)
     mixin navloginform(redirect)
 
 mixin navloginform(redirect)
-  .visible-md.visible-lg
-    if loginDomain == null
-      - loginDomain = ""
-    form#loginform.navbar-form.navbar-right(action="#{loginDomain}/login", method="post")
-      input(type="hidden", name="redirect", value=redirect)
-      .form-group
-        input#username.form-control(type="text", name="name", placeholder="Логин")
-        input#password.form-control(type="password", name="password", placeholder="Пароль")
-        button#login.btn.btn-default(type="submit") Авторизоваться
-
-mixin navlogoutform(redirect)
   if loginDomain == null
     - loginDomain = ""
-  if redirect
-    - url = "logout?redirect=" + redirect
-  else
-    - url = "logout"
+  .visible-lg
+    form#loginform.navbar-form.navbar-right(action="#{loginDomain}/login", method="post")
+      input(type="hidden", name="_csrf", value=csrfToken)
+      input(type="hidden", name="dest", value=baseUrl + redirect)
+      .form-group
+        input#username.form-control(type="text", name="name", placeholder="Логин")
+      .form-group
+        input#password.form-control(type="password", name="password", placeholder="Пароль")
+      .form-group
+        .checkbox
+          label
+            input(type="checkbox", name="remember")
+            span.navbar-text-nofloat Remember me
+        button#login.btn.btn-default(type="submit") Авторизоваться
+  .visible-md
+    p#loginform.navbar-text.pull-right
+      a#login.navbar-link(href="#{loginDomain}/login?dest=#{encodeURIComponent(baseUrl + redirect)}") Авторизоваться
+      span &nbsp;&middot;&nbsp;
+      a#register.navbar-link(href="/register") Register
+
+mixin navlogoutform(redirect)
   p#logoutform.navbar-text.pull-right
     span#welcome Привет, #{loginName}!
     span &nbsp;&middot;&nbsp;
-    a#logout.navbar-link(href="#{loginDomain}/#{url}") Выйти
+    a#logout.navbar-link(href="/logout?dest=#{encodeURIComponent(baseUrl + redirect)}&_csrf=#{csrfToken}") Выйти

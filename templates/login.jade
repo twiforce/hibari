@@ -12,7 +12,7 @@ html(lang="ru")
           ul.nav.navbar-nav
             mixin navdefaultlinks("/login")
           if loggedIn
-            mixin navlogoutform()
+            mixin navlogoutform("/")
       section#mainpage.container
         if wasAlreadyLoggedIn
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
@@ -26,8 +26,9 @@ html(lang="ru")
                 p= loginError
             h2 Авторизация
             form(role="form", action="/login", method="post")
+              input(type="hidden", name="_csrf", value=csrfToken)
               if redirect
-                input(type="hidden", name="redirect", value=redirect)
+                input(type="hidden", name="dest", value=redirect)
               .form-group
                 label(for="username") Логин
                 input#username.form-control(type="text", name="name")
@@ -35,7 +36,13 @@ html(lang="ru")
                 label(for="password") Пароль
                 input#password.form-control(type="password", name="password")
                 a(href="/account/passwordreset") Забыли пароль?
+              .form-group
+                .checkbox
+                  label
+                    input(type="checkbox", name="remember")
+                    | Remember me
               button.btn.btn-success.btn-block(type="submit") Авторизоваться
+
         else
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
             .alert.alert-success.messagebox.center

@@ -1,0 +1,59 @@
+doctype html
+html(lang="ru")
+  head
+    include head
+    mixin head()
+  body
+    #wrap
+      nav.navbar.navbar-inverse.navbar-fixed-top(role="navigation")
+        include nav
+        mixin navheader()
+        #nav-collapsible.collapse.navbar-collapse
+          ul.nav.navbar-nav
+            mixin navdefaultlinks("/login")
+          if loggedIn
+            mixin navlogoutform("/")
+      section#mainpage.container
+        if wasAlreadyLoggedIn
+          .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
+            .alert.alert-info.messagebox.center
+              h3(style="margin: 5px auto") Привет, #{loginName}!
+        else if !loggedIn
+          .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
+            if loginError
+              .alert.alert-danger.messagebox.center
+                strong Неудачная авторизация
+                p= loginError
+            h2 Авторизация
+            form(role="form", action="/login", method="post")
+              input(type="hidden", name="_csrf", value=csrfToken)
+              if redirect
+                input(type="hidden", name="dest", value=redirect)
+              .form-group
+                label(for="username") Логин
+                input#username.form-control(type="text", name="name")
+              .form-group
+                label(for="password") Пароль
+                input#password.form-control(type="password", name="password")
+<<<<<<< HEAD
+                a(href="/account/passwordreset") Забыли пароль?
+              button.btn.btn-success.btn-block(type="submit") Авторизоваться
+=======
+                a(href="/account/passwordreset") Forgot password?
+              .form-group
+                .checkbox
+                  label
+                    input(type="checkbox", name="remember")
+                    | Remember me
+              button.btn.btn-success.btn-block(type="submit") Login
+>>>>>>> 9b5d38e6c81738f94cb0b19631908166fcad745a
+        else
+          .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
+            .alert.alert-success.messagebox.center
+              strong Успешная авторизация
+              p Привет, #{loginName}!
+                if redirect
+                  br
+                  a(href=redirect) Вернуться на предыдущую страницу
+    include footer
+    mixin footer()

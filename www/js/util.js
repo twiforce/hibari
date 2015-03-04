@@ -1,14 +1,3 @@
-/*
-The MIT License (MIT)
-Copyright (c) 2013 Calvin Montgomery
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 function makeAlert(title, text, klass) {
     if(!klass) {
         klass = "alert-info";
@@ -62,6 +51,8 @@ function formatURL(data) {
             return "https://docs.google.com/file/d/" + data.id;
         case "fi":
             return data.id;
+        case "hb":
+            return "http://hitbox.tv/" + data.id;
         default:
             return "#";
     }
@@ -100,6 +91,24 @@ function formatUserlistItem(div) {
     name.css("font-style", "");
     name.addClass(getNameColor(data.rank));
     div.find(".profile-box").remove();
+
+    if (data.afk) {
+        div.addClass("userlist_afk");
+    } else {
+        div.removeClass("userlist_afk");
+    }
+
+    if (div.data("meta") && div.data("meta").muted) {
+        div.addClass("userlist_muted");
+    } else {
+        div.removeClass("userlist_muted");
+    }
+
+    if (div.data("meta") && div.data("meta").smuted) {
+        div.addClass("userlist_smuted");
+    } else {
+        div.removeClass("userlist_smuted");
+    }
 
     var profile = null;
     name.mouseenter(function(ev) {
@@ -246,6 +255,9 @@ function addUserDropdown(entry) {
             .text("Выкинуть")
             .click(function () {
                 var reason = prompt("Введите причину (необязательно)");
+                if (reason === null) {
+                    return;
+                }
                 socket.emit("chatMsg", {
                     msg: "/kick " + name + " " + reason,
                     meta: {}
@@ -297,6 +309,9 @@ function addUserDropdown(entry) {
             .text("Бан по имени")
             .click(function () {
                 var reason = prompt("Введите причину (необязательно)");
+                if (reason === null) {
+                    return;
+                }
                 socket.emit("chatMsg", {
                     msg: "/ban " + name + " " + reason,
                     meta: {}
@@ -307,6 +322,9 @@ function addUserDropdown(entry) {
             .text("Бан по IP")
             .click(function () {
                 var reason = prompt("Введите причину (необязательно)");
+                if (reason === null) {
+                    return;
+                }
                 socket.emit("chatMsg", {
                     msg: "/ipban " + name + " " + reason,
                     meta: {}
@@ -684,7 +702,7 @@ function storeOpts() {
 
 function applyOpts() {
     if ($("#usertheme").attr("href") !== USEROPTS.theme) {
-        $("#usertheme").remove();
+        var old = $("#usertheme").attr("id", "usertheme_old");
         var theme = USEROPTS.theme;
         if (theme === "default") {
             theme = "/css/themes/slate.css";
@@ -693,6 +711,7 @@ function applyOpts() {
             .attr("type", "text/css")
             .attr("id", "usertheme")
             .attr("href", theme)
+            .attr("onload", "$('#usertheme_old').remove()")
             .appendTo($("head"));
         fixWeirdButtonAlignmentIssue();
     }
@@ -893,7 +912,7 @@ function handleModPermissions() {
     })();
     $("#cs-csstext").val(CHANNEL.css);
     $("#cs-jstext").val(CHANNEL.js);
-    $("#cs-motdtext").val(CHANNEL.motd_text);
+    $("#cs-motdtext").val(CHANNEL.motd);
     setParentVisible("a[href='#cs-motdeditor']", hasPermission("motdedit"));
     setParentVisible("a[href='#cs-permedit']", CLIENT.rank >= 3);
     setParentVisible("a[href='#cs-banlist']", hasPermission("ban"));
@@ -1273,6 +1292,13 @@ function parseMediaLink(url) {
         };
     }
 
+    if ((m = url.match(/hitbox\.tv\/([^\?&#]+)/))) {
+        return {
+            id: m[1],
+            type: "hb"
+        };
+    }
+
     if((m = url.match(/vimeo\.com\/([^\?&#]+)/))) {
         return {
             id: m[1],
@@ -1280,7 +1306,7 @@ function parseMediaLink(url) {
         };
     }
 
-    if((m = url.match(/dailymotion\.com\/video\/([^\?&#]+)/))) {
+    if((m = url.match(/dailymotion\.com\/video\/([^\?&#_]+)/))) {
         return {
             id: m[1],
             type: "dm"
@@ -1312,6 +1338,29 @@ function parseMediaLink(url) {
         return {
             id: m[1] + "_" + m[2] + "_" + m[3],
             type: "gp"
+        };
+    }
+
+    /*  Shorthand URIs  */
+    // To catch Google Plus by ID alone
+    if ((m = url.match(/^(?:gp:)?(\d{21}_\d{19}_\d{19})/))) {
+        return {
+            id: m[1],
+            type: "gp"
+        };
+    }
+    // So we still trim DailyMotion URLs
+    if((m = url.match(/^dm:([^\?&#_]+)/))) {
+        return {
+            id: m[1],
+            type: "dm"
+        };
+    }
+    // Generic for the rest.
+    if ((m = url.match(/^([a-z]{2}):([^\?&#]+)/))) {
+        return {
+            id: m[2],
+            type: m[1]
         };
     }
 
@@ -1450,7 +1499,8 @@ function addChatMessage(data) {
     var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
     // a message, it highlights messages from that user
-    var safeUsername = data.username.replace(/[^\w-]/g, '$');
+
+    var safeUsername = data.username.replace(/[^\w-]/g, '\\$');
     div.addClass("chat-msg-" + safeUsername);
     div.appendTo($("#messagebuffer"));
     div.mouseover(function() {
@@ -1502,19 +1552,26 @@ function pingMessage(isHighlight) {
 function compactLayout() {
     /* Undo synchtube layout */
     if ($("body").hasClass("synchtube")) {
+        $("body").removeClass("synchtube")
         $("#chatwrap").detach().insertBefore($("#videowrap"));
         $("#leftcontrols").detach().insertBefore($("#rightcontrols"));
         $("#leftpane").detach().insertBefore($("#rightpane"));
         $("#userlist").css("float", "left");
+        if($("#userlisttoggle").hasClass("glyphicon-chevron-left")){
+            $("#userlisttoggle").removeClass("glyphicon-chevron-left").addClass("glyphicon-chevron-right")
+        }
+        $("#userlisttoggle").removeClass("pull-right").addClass("pull-left")
     }
 
     /* Undo fluid layout */
     if ($("body").hasClass("fluid")) {
+        $("body").removeClass("fluid")
         $(".container-fluid").removeClass("container-fluid").addClass("container");
     }
 
     /* Undo HD layout */
     if ($("body").hasClass("hd")) {
+        $("body").removeClass("hd");
         $("#drinkbar").detach().removeClass().addClass("col-lg-12 col-md-12")
           .appendTo("#drinkbarwrap");
         $("#chatwrap").detach().removeClass().addClass("col-lg-5 col-md-5")
@@ -1544,7 +1601,6 @@ function compactLayout() {
         $("#mainpage").css("padding-top", "60px");
         $("#queue").css("max-height", "500px");
         $("#messagebuffer, #userlist").css("max-height", "");
-        $("body").removeClass("hd");
     }
 
     $("body").addClass("compact");
@@ -1559,6 +1615,10 @@ function fluidLayout() {
 }
 
 function synchtubeLayout() {
+    if($("#userlisttoggle").hasClass("glyphicon-chevron-right")){
+        $("#userlisttoggle").removeClass("glyphicon-chevron-right").addClass("glyphicon-chevron-left")
+    }
+    $("#userlisttoggle").removeClass("pull-left").addClass("pull-right")
     $("#videowrap").detach().insertBefore($("#chatwrap"));
     $("#rightcontrols").detach().insertBefore($("#leftcontrols"));
     $("#rightpane").detach().insertBefore($("#leftpane"));
@@ -2321,14 +2381,11 @@ function formatCSChatFilterList() {
                 f.flags = flags.val();
                 f.replace = replace.val();
                 f.filterlinks = filterlinks.prop("checked");
-                try {
-                    new RegExp(f.source, f.flags);
-                } catch (e) {
-                    alert("Ошибка в регулярном выражении: " + e);
-                }
 
                 socket.emit("updateFilter", f);
-                reset();
+                socket.once("updateFilterSuccess", function () {
+                    reset();
+                });
             });
 
             control.data("editor", tr2);
@@ -2393,7 +2450,7 @@ function formatCSEmoteList() {
             };
 
             edit.blur(finish);
-            edit.keyup(function (ev) {
+            edit.keydown(function (ev) {
                 if (ev.keyCode === 13) {
                     finish();
                 }
@@ -2544,7 +2601,7 @@ function initPm(user) {
     var input = $("<input/>").addClass("form-control pm-input").attr("type", "text")
         .appendTo(body);
 
-    input.keyup(function (ev) {
+    input.keydown(function (ev) {
         if (ev.keyCode === 13) {
             var meta = {};
             var msg = input.val();
