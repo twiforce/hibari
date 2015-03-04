@@ -1,14 +1,3 @@
-/*
-The MIT License (MIT)
-Copyright (c) 2013 Calvin Montgomery
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 Callbacks = {
 
     error: function (reason) {
@@ -186,12 +175,11 @@ Callbacks = {
         }
     },
 
-    setMotd: function(data) {
-        CHANNEL.motd = data.html;
-        CHANNEL.motd_text = data.motd;
-        $("#motd").html(CHANNEL.motd);
-        $("#cs-motdtext").val(CHANNEL.motd_text);
-        if (data.motd != "") {
+    setMotd: function(motd) {
+        CHANNEL.motd = motd;
+        $("#motd").html(motd);
+        $("#cs-motdtext").val(motd);
+        if (motd != "") {
             $("#motdwrap").show();
             $("#motd").show();
             $("#togglemotd").find(".glyphicon-plus")
@@ -1069,6 +1057,28 @@ Callbacks = {
             row.hide("fade", row.remove.bind(row));
             CHANNEL.emotes.splice(i, 1);
         }
+    },
+
+    warnLargeChandump: function (data) {
+        function toHumanReadable(size) {
+            if (size > 1048576) {
+                return Math.floor((size / 1048576) * 100) / 100 + "MiB";
+            } else if (size > 1024) {
+                return Math.floor((size / 1024) * 100) / 100 + "KiB";
+            } else {
+                return size + "B";
+            }
+        }
+
+        if ($("#chandumptoobig").length > 0) {
+            $("#chandumptoobig").remove();
+        }
+
+        errDialog("This channel currently exceeds the maximum size of " +
+            toHumanReadable(data.limit) + " (channel size is " +
+            toHumanReadable(data.actual) + ").  Please reduce the size by removing " +
+            "unneeded playlist items, filters, and/or emotes or else the channel will " +
+            "be unable to load the next time it is reloaded").attr("id", "chandumptoobig");
     }
 }
 

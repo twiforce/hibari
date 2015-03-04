@@ -1,0 +1,134 @@
+mixin lcheckbox(id, label)
+  .form-group
+    label.control-label.col-sm-4(for=id)= label
+    .col-sm-8
+      .checkbox
+        input(type="checkbox", id=id)
+
+mixin rcheckbox(id, label)
+  .form-group
+    .col-sm-8.col-sm-offset-4
+      .checkbox
+        label(for=id)
+          input(type="checkbox", id=id)
+          = label
+
+mixin textbox(id, label, placeholder)
+  .form-group
+    label.control-label.col-sm-4(for=id)= label
+    .col-sm-8
+      if placeholder
+        input.form-control(id=id, type="text", placeholder=placeholder)
+      else
+        input.form-control(id=id, type="text")
+
+mixin us-general
+  #us-general.tab-pane
+    h4 Основные настройки
+    form.form-horizontal(action="javascript:void(0)")
+      .form-group
+        label.control-label.col-sm-4(for="#us-theme") Тема оформления
+        .col-sm-8
+          select#us-theme.form-control
+            option(value="/css/themes/light.css") Легкая
+            option(value="/css/themes/bootstrap-theme.min.css") Bootstrap
+            option(value="/css/themes/slate.css") Slate
+            option(value="/css/themes/cyborg.css") Cyborg
+<<<<<<< HEAD
+            option(value="/css/themes/holo.css") Holo
+=======
+            option(value="/css/themes/modern.css") Modern
+>>>>>>> 9b5d38e6c81738f94cb0b19631908166fcad745a
+      .form-group
+        label.control-label.col-sm-4(for="#us-layout") Раскладка
+        .col-sm-8
+          select#us-layout.form-control
+            option(value="default") Компактная
+            option(value="synchtube") Synchtube
+            option(value="fluid") Fluid
+            option(value="synchtube-fluid") Synchtube + Fluid
+            option(value="hd") HD
+      .col-sm-4
+      .col-sm-8
+        p.text-danger Возможно, потребуется перезагрузка страницы.
+      mixin rcheckbox("us-no-channelcss", "Игнорировать CSS каналов")
+      mixin rcheckbox("us-no-channeljs", "Игнорировать Javascript каналов")
+      .col-sm-4
+      .col-sm-8
+        p#us-conninfo.text-info <strong>Информация о соединении: </strong>
+      .clear
+
+mixin us-scripts
+  #us-scriptcontrol.tab-pane
+    h4 Script Access
+    table.table
+      thead
+        tr
+          th Channel
+          th Type
+          th Preference
+          th Clear
+
+mixin us-playback
+  #us-playback.tab-pane
+    h4 Воспроизведение
+    form.form-horizontal(action="javascript:void(0)")
+      mixin rcheckbox("us-synch", "Синхронизовать видео")
+      mixin textbox("us-synch-accuracy", "Частота синхронизации (сек)", "2")
+      mixin rcheckbox("us-wmode-transparent", "Включить wmode=transparent")
+      .col-sm-4
+      .col-sm-8
+        p.text-info Эта настройка позволяет объектам отображаться над окном видео, но может уменьшить производительность сайта.
+      mixin rcheckbox("us-hidevideo", "Удалить видео")
+      mixin rcheckbox("us-playlistbuttons", "Спрятать кнопки плейлиста")
+      mixin rcheckbox("us-oldbtns", "Старый стиль кнопок плейлиста")
+      .form-group
+<<<<<<< HEAD
+        label.control-label.col-sm-4(for="#us-default-quality") Стандартное качество YouTube/Vimeo/Dailymotion
+=======
+        label.control-label.col-sm-4(for="#us-default-quality") Quality Preference
+>>>>>>> 9b5d38e6c81738f94cb0b19631908166fcad745a
+        .col-sm-8
+          select#us-default-quality.form-control
+            option(value="auto") Авто
+            option(value="small") 240p
+            option(value="medium") 360p
+            option(value="large") 480p
+            option(value="hd720") 720p
+            option(value="hd1080") 1080p
+            option(value="highres") Максимально доступное
+
+mixin us-chat
+  #us-chat.tab-pane
+    h4 Чат
+    form.form-horizontal(action="javascript:void(0)")
+      mixin rcheckbox("us-chat-timestamp", "Показывать время")
+      mixin rcheckbox("us-sort-rank", "Сортировать пользователей по рангу")
+      mixin rcheckbox("us-sort-afk", "Сортировать отошедших вниз")
+      .col-sm-4
+      .col-sm-8
+        p.text-info Следующие две настройки будут срабатывать только тогда, когда окно или вкладка с сайтом неактивны.
+      .form-group
+        label.control-label.col-sm-4(for="#us-blink-title") Мигать заголовком окна при новых сообщениях
+        .col-sm-8
+          select#us-blink-title.form-control
+            option(value="never") Никогда
+            option(value="onlyping") Только когда меня упомянули в чате или прислали ЛС
+            option(value="always") Всегда
+      .form-group
+        label.control-label.col-sm-4(for="#us-ping-sound") Звук уведомления при новых сообщениях
+        .col-sm-8
+          select#us-ping-sound.form-control
+            option(value="never") Никогда
+            option(value="onlyping") Только когда меня упомянули в чате или прислали ЛС
+            option(value="always") Всегда
+      mixin rcheckbox("us-sendbtn", "Добавить кнопку \"Отправить\"")
+      mixin rcheckbox("us-no-emotes", "Отключить смайлы")
+
+mixin us-mod
+  #us-mod.tab-pane
+    h4 Настройки модератора
+    form.form-horizontal(action="javascript:void(0)")
+      mixin rcheckbox("us-modflair", "Показывать цвет ранга")
+      mixin rcheckbox("us-joinmessage", "Показывать сообщения о входе")
+      mixin rcheckbox("us-shadowchat", "Показывать скрытые сообщения")

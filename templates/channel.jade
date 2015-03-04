@@ -39,7 +39,7 @@ html(lang="ru")
           #main.row
             #chatwrap.col-lg-5.col-md-5
               #chatheader
-                i#userlisttoggle.glyphicon.glyphicon-chevron-up.pull-left.pointer(title="Спрятать/показать пользователей")
+                i#userlisttoggle.glyphicon.glyphicon-chevron-down.pull-left.pointer(title="Спрятать/показать пользователей")
                 span#usercount.pointer Не подключен
                 span#modflair.label.label-default.pull-right.pointer M
                 span#adminflair.label.label-default.pull-right.pointer A
@@ -51,13 +51,14 @@ html(lang="ru")
                 input#guestname.form-control(type="text", placeholder="Введите имя и нажмите Enter")
             #videowrap.col-lg-7.col-md-7
               p#currenttitle Ничего не воспроизводится
+>>>>>>> 9b5d38e6c81738f94cb0b19631908166fcad745a
               .embed-responsive.embed-responsive-16by9
                 #ytapiplayer.embed-responsive-item
           #controlsrow.row
             #leftcontrols.col-lg-5.col-md-5
               button#newpollbtn.btn.btn-sm.btn-default Создать опрос
             #rightcontrols.col-lg-7.col-md-7
-              #plcontrol.btn-group
+              #plcontrol.bbtn-group.pull-left
                 button#showsearch.btn.btn-sm.btn-default(title="Найти видео", data-toggle="collapse", data-target="#searchcontrol")
                   span.glyphicon.glyphicon-search
                 button#showmediaurl.btn.btn-sm.btn-default(title="Добавить видео по ссылке", data-toggle="collapse", data-target="#addfromurl")

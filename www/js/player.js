@@ -1,14 +1,3 @@
-/*}
-The MIT License (MIT)
-Copyright (c) 2013 Calvin Montgomery
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 var VIMEO_FLASH = false;
 
 function removeOld(replace) {
@@ -29,6 +18,7 @@ var YouTubePlayer = function (data) {
             self.videoId = data.id;
             self.videoLength = data.seconds;
             self.theYouTubeDevsNeedToFixThisShit = false;
+            self.whyDoesSetPlaybackQualityHaveARaceCondition = true;
             var wmode = USEROPTS.wmode_transparent ? "transparent" : "opaque";
             self.player = new YT.Player("ytapiplayer", {
                 videoId: data.id,
@@ -45,6 +35,13 @@ var YouTubePlayer = function (data) {
                         PLAYER.setVolume(VOLUME);
                     },
                     onStateChange: function (ev) {
+                        if (self.whyDoesSetPlaybackQualityHaveARaceCondition) {
+                            self.whyDoesSetPlaybackQualityHaveARaceCondition = false;
+
+                            if (USEROPTS.default_quality) {
+                                self.player.setPlaybackQuality(USEROPTS.default_quality);
+                            }
+                        }
 
                         /**
                          * Race conditions suck.
@@ -53,7 +50,10 @@ var YouTubePlayer = function (data) {
                          */
                         if (ev.data === YT.PlayerState.PLAYING &&
                             self.theYouTubeDevsNeedToFixThisShit) {
-                            PLAYER.seek(0.000001);
+
+                            if (USEROPTS.default_quality) {
+                                self.player.setPlaybackQuality(USEROPTS.default_quality);
+                            }
                             PLAYER.pause();
                             self.theYouTubeDevsNeedToFixThisShit = false;
                         }
@@ -80,9 +80,10 @@ var YouTubePlayer = function (data) {
     self.load = function (data) {
         if(self.player && self.player.loadVideoById) {
             self.player.loadVideoById(data.id, data.currentTime);
+            self.whyDoesSetPlaybackQualityHaveARaceCondition = true;
             if (USEROPTS.default_quality) {
-                self.player.setPlaybackQuality(USEROPTS.default_quality);
-                // What's that?  Another stupid hack for the HTML5 player?
+                // Try to set it ahead of time, if that works
+                // If not, the onStateChange callback will try again anyways
                 self.player.setPlaybackQuality(USEROPTS.default_quality);
             }
             self.videoId = data.id;
@@ -439,6 +440,7 @@ var SoundcloudPlayer = function (data) {
     // Go figure
     self.soundcloudIsSeriouslyFuckingBroken = VOLUME;
     self.videoId = data.id;
+    self.scuri = data.meta.scuri || self.videoId;
     self.videoLength = data.seconds;
     waitUntilDefined(window, "SC", function () {
         unfixSoundcloudShit();
@@ -447,7 +449,7 @@ var SoundcloudPlayer = function (data) {
         iframe.appendTo($("#ytapiplayer"));
 
         iframe.attr("id", "scplayer");
-        iframe.attr("src", "https://w.soundcloud.com/player/?url="+self.videoId);
+        iframe.attr("src", "https://w.soundcloud.com/player/?url="+self.scuri);
         iframe.css("height", "166px");
         iframe.css("border", "none");
 
@@ -467,7 +469,7 @@ var SoundcloudPlayer = function (data) {
         self.player = SC.Widget("scplayer");
 
         self.player.bind(SC.Widget.Events.READY, function () {
-            self.player.load(self.videoId, { auto_play: true });
+            self.player.load(self.scuri, { auto_play: true });
 
             self.player.bind(SC.Widget.Events.PAUSE, function () {
                 PLAYER.paused = true;
@@ -498,9 +500,10 @@ var SoundcloudPlayer = function (data) {
 
     self.load = function (data) {
         self.videoId = data.id;
+        self.scuri = data.meta.scuri || self.videoId;
         self.videoLength = data.seconds;
         if(self.player && self.player.load) {
-            self.player.load(data.id, { auto_play: true });
+            self.player.load(self.scuri, { auto_play: true });
             var soundcloudNeedsToFuckingFixTheirPlayer = function () {
                 self.setVolume(VOLUME);
                 self.player.unbind(SC.Widget.Events.PLAY_PROGRESS);
@@ -937,6 +940,29 @@ var CustomPlayer = function (data) {
         removeOld();
         var div = $("#ytapiplayer");
         div.attr("id", "");
+
+        /*
+         * 2014-12-10
+         *
+         * If a user is connected via HTTPS and the custom link is
+         * HTTP, then the embed fails due to mixed active content
+         * policy.  Display a message indicating this.
+         */
+        if (location.protocol.match(/^https/) &&
+            self.videoId.match(/http:/)) {
+
+            div.html("You are currently connected via HTTPS but " +
+                "the custom embed link uses non-secure HTTP.  " +
+                "Your browser may therefore block it from loading.  " +
+                "To fix this, either add the custom embed as a secure " +
+                "URL (https://...) if the source supports it, or " +
+                "visit this page over plain HTTP (your websocket will still " +
+                "use secure HTTPS for communication, just the page " +
+                "will load over plain HTTP).");
+
+            // Try to salvage the link
+            self.videoId = self.videoId.replace(/http:/g, "https:");
+        }
         div.append(self.videoId);
 
         self.player = div.find("iframe");
@@ -1091,6 +1117,59 @@ function FilePlayer(data) {
     }
 };
 
+var HitboxPlayer = function (data) {
+    var self = this;
+    self.videoId = data.id;
+    self.videoLength = data.seconds;
+    self.init = function () {
+        if (location.protocol.match(/^https/)) {
+            var div = makeAlert("Security Policy",
+                "You are currently connected via HTTPS but " +
+                "Hitbox only supports plain HTTP.  Due to browser " +
+                "security policy, the embed player cannot be loaded.  " +
+                "In order to watch the video, you must visit this page " +
+                "from its plain HTTP URL (your websocket will still be " +
+                "secured with HTTPS).  Please complain to Hitbox about this.",
+                "alert-danger");
+            div.addClass("embed-responsive-item");
+            removeOld(div);
+            return;
+        }
+
+        var iframe = $("<iframe/>")
+            .attr("src", "http://hitbox.tv/embed/" + self.videoId)
+            .attr("webkitAllowFullScreen", "")
+            .attr("mozallowfullscreen", "")
+            .attr("allowFullScreen", "");
+
+        if (USEROPTS.wmode_transparent)
+            iframe.attr("wmode", "transparent");
+
+        removeOld(iframe);
+        self.player = iframe;
+    };
+
+    self.load = function (data) {
+        self.videoId = data.id;
+        self.videoLength = data.seconds;
+        self.init();
+    };
+
+    self.pause = function () { };
+
+    self.play = function () { };
+
+    self.getTime = function () { };
+
+    self.seek = function () { };
+
+    self.getVolume = function () { };
+
+    self.setVolume = function () { };
+
+    self.init();
+};
+
 function handleMediaUpdate(data) {
     // Don't update if the position is past the video length, but
     // make an exception when the video length is 0 seconds
@@ -1191,7 +1270,8 @@ var constructors = {
     "cu": CustomPlayer,
     "rt": RTMPPlayer,
     "rv": FilePlayer,
-    "fi": FilePlayer
+    "fi": FilePlayer,
+    "hb": HitboxPlayer
 };
 
 function loadMediaPlayer(data) {

@@ -1,14 +1,3 @@
-/*
-The MIT License (MIT)
-Copyright (c) 2013 Calvin Montgomery
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
-
 /* window focus/blur */
 $(window).focus(function() {
     FOCUSED = true;
@@ -394,7 +383,7 @@ $("#queue_end").click(queue.bind(this, "end", "url"));
 $("#ce_queue_next").click(queue.bind(this, "next", "customembed"));
 $("#ce_queue_end").click(queue.bind(this, "end", "customembed"));
 
-$("#mediaurl").keyup(function(ev) {
+$("#mediaurl").keydown(function(ev) {
     if (ev.keyCode === 13) {
         queue("end", "url");
     } else {
@@ -427,7 +416,7 @@ $("#mediaurl").keyup(function(ev) {
                 $("<input/>").addClass("form-control")
                     .attr("type", "text")
                     .attr("id", "addfromurl-title-val")
-                    .keyup(function (ev) {
+                    .keydown(function (ev) {
                         if (ev.keyCode === 13) {
                             queue("end", "url");
                         }
@@ -621,14 +610,7 @@ $("#cs-chatfilters-newsubmit").click(function () {
               "match.");
     }
 
-    try {
-        new RegExp(regex, flags);
-    } catch (e) {
-        alert("Regex error: " + e);
-        return;
-    }
-
-    socket.emit("updateFilter", {
+    socket.emit("addFilter", {
         name: name,
         source: regex,
         flags: flags,
@@ -636,10 +618,12 @@ $("#cs-chatfilters-newsubmit").click(function () {
         active: true
     });
 
-    $("#cs-chatfilters-newname").val("");
-    $("#cs-chatfilters-newregex").val("");
-    $("#cs-chatfilters-newflags").val("");
-    $("#cs-chatfilters-newreplace").val("");
+    socket.once("addFilterSuccess", function () {
+        $("#cs-chatfilters-newname").val("");
+        $("#cs-chatfilters-newregex").val("");
+        $("#cs-chatfilters-newflags").val("");
+        $("#cs-chatfilters-newreplace").val("");
+    });
 });
 
 $("#cs-emotes-newsubmit").click(function () {
@@ -723,10 +707,13 @@ $("#cs-emotes-import").click(function () {
 });
 
 var toggleUserlist = function () {
+    var direction = !USEROPTS.layout.match(/synchtube/) ? "glyphicon-chevron-right" : "glyphicon-chevron-left"
     if ($("#userlist").css("display") === "none") {
         $("#userlist").show();
+        $("#userlisttoggle").removeClass(direction).addClass("glyphicon-chevron-down");
     } else {
         $("#userlist").hide();
+        $("#userlisttoggle").removeClass("glyphicon-chevron-down").addClass(direction);
     }
     scrollChat();
 };
@@ -741,6 +728,18 @@ $(document).on("click",".username", function () {
 
 $(".add-temp").change(function () {
     $(".add-temp").prop("checked", $(this).prop("checked"));
+});
+
+/*
+ * Fixes #417 which is caused by changes in Bootstrap 3.3.0
+ * (see twbs/bootstrap#15136)
+ *
+ * Whenever the active tab in channel options is changed,
+ * the modal must be updated so that the backdrop is resized
+ * appropriately.
+ */
+$("#channeloptions li > a[data-toggle='tab']").on("shown.bs.tab", function () {
+    $("#channeloptions").data("bs.modal").handleUpdate();
 });
 
 applyOpts();
