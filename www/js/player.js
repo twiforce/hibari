@@ -1100,7 +1100,7 @@ var HitboxPlayer = function (data) {
         }
 
         var iframe = $("<iframe/>")
-            .attr("src", "http://hitbox.tv/embed/" + self.videoId)
+            .attr("src", "http://www.hitbox.tv/embed/" + self.videoId + "?autoplay=true")
             .attr("webkitAllowFullScreen", "")
             .attr("mozallowfullscreen", "")
             .attr("allowFullScreen", "");
