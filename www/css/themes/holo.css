@@ -68,14 +68,14 @@ a:hover, a:focus {
 
 .btn {
     border-color: transparent;
+    border-left: 0px;
+    border-right: 0px;
+    border-bottom: 0px;
 }
 
 .btn-default, .well {
     background-color: #272727;
     color: #bbbbbb;
-    border-left: 0px;
-    border-right: 0px;
-    border-bottom: 0px;
     border-top: 3px solid #333333;
     transition: all .4s ease-in-out;
 }
@@ -115,17 +115,28 @@ a:hover, a:focus {
 
 .btn-success, .label-success, .progress-bar-success {
     background-color: #669900;
+    border-color: #669900;
+    border-top: 3px solid #91ca00;
 }
 
 .btn-danger, .label-danger, .progress-bar-danger {
-    background-color: #FF4444;
+    background-color: #D33C3C;
+    border-color: #D33C3C;
+    border-top: 3px solid #FF4444;
 }
 
 .btn-warning, .label-warning, .progress-bar-warning {
-    background-color: #FFBB33;
-    color: #444444;
+    background-color: #E5A333;
+    border-color: #E5A333;
+    border-top: 3px solid #FFBB33;
 }
 
+.btn-success:hover, .btn-success:active, .btn-success:focus,
+.btn-danger:hover,  .btn-danger:active,  .btn-danger:focus,
+.btn-warning:hover, .btn-warning:active, .btn-danger:focus {
+    border-top: 3px solid rgba(255, 255, 255, 0.2);
+    transition: all .2s ease-in-out;
+}
 .nav-tabs > li > a {
     border-radius: 0;
 }
