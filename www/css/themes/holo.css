@@ -137,6 +137,12 @@ a:hover, a:focus {
     border-top: 3px solid rgba(255, 255, 255, 0.2);
     transition: all .2s ease-in-out;
 }
+
+.embed-responsive.embed-responsive-16by9 {
+    padding-bottom: 56.25%;
+    background-color: rgba(0, 0, 0, 0.33);
+}
+
 .nav-tabs > li > a {
     border-radius: 0;
 }
@@ -305,4 +311,8 @@ select option {
 
 #messagebuffer::-webkit-scrollbar-thumb, .pm-buffer::-webkit-scrollbar-thumb, #queue::-webkit-scrollbar-thumb, #userlist::-webkit-scrollbar-thumb {
     background-color: #555;
+}
+
+.text-muted a {
+    color: #bbbbbb;
 }
