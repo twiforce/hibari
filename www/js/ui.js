@@ -95,7 +95,7 @@ $("#guestname").keydown(function (ev) {
 function chatTabComplete() {
     var words = $("#chatline").val().split(" ");
     var current = words[words.length - 1].toLowerCase();
-    if (!current.match(/^[\w-]{1,20}$/)) {
+    if (!current.match(/([\w-]{1,20}$|[а-яА-Я_-]{1,20}$)/)) {
         return;
     }
 
