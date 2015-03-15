@@ -303,6 +303,19 @@ $("#mediarefresh").click(function() {
     socket.emit("playerReady");
 });
 
+if (USEROPTS.synch == false)
+    $("#togglesynch").find("span").attr('class', 'glyphicon glyphicon-pause');
+
+$("#togglesynch").click(function() {
+    if (USEROPTS.synch == true) {
+        USEROPTS.synch = false;
+        $("#togglesynch").find("span").attr('class', 'glyphicon glyphicon-pause')
+    } else if (USEROPTS.synch == false) {
+        USEROPTS.synch = true;
+        $("#togglesynch").find("span").attr('class', 'glyphicon glyphicon-play')
+    }
+});
+
 /* playlist controls */
 
 $("#queue").sortable({
