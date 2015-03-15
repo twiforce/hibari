@@ -57,15 +57,19 @@ html(lang="ru")
             #leftcontrols.col-lg-5.col-md-5
               button#newpollbtn.btn.btn-sm.btn-default Создать опрос
             #rightcontrols.col-lg-7.col-md-7
-              #plcontrol.bbtn-group.pull-left
+              #plcontrol.btn-group.pull-left
                 button#showsearch.btn.btn-sm.btn-default(title="Найти видео", data-toggle="collapse", data-target="#searchcontrol")
                   span.glyphicon.glyphicon-search
+                  span.hidden-xs  Найти
                 button#showmediaurl.btn.btn-sm.btn-default(title="Добавить видео по ссылке", data-toggle="collapse", data-target="#addfromurl")
                   span.glyphicon.glyphicon-plus
+                  span.hidden-xs  Добавить
                 button#showcustomembed.btn.btn-sm.btn-default(title="Добавить iframe", data-toggle="collapse", data-target="#customembed")
                   span.glyphicon.glyphicon-th-large
+                  span.hidden-xs  Iframe
                 button#showplaylistmanager.btn.btn-sm.btn-default(title="Менеджер плейлистов", data-toggle="collapse", data-target="#playlistmanager")
                   span.glyphicon.glyphicon-list
+                  span.hidden-xs  Плейлисты
                 button#clearplaylist.btn.btn-sm.btn-default(title="Очистить плейлист")
                   span.glyphicon.glyphicon-trash
                 button#shuffleplaylist.btn.btn-sm.btn-default(title="Перемешать плейлист")
@@ -74,7 +78,7 @@ html(lang="ru")
                   span.glyphicon.glyphicon-lock
               #videocontrols.btn-group.pull-right
                 button#mediarefresh.btn.btn-sm.btn-default(title="Обновить видеоплеер")
-                  span.glyphicon.glyphicon-retweet
+                  span.glyphicon.glyphicon-refresh
                 button#getplaylist.btn.btn-sm.btn-default(title="Получить ссылки на видео из плейлиста")
                   span.glyphicon.glyphicon-link
                 button#voteskip.btn.btn-sm.btn-default(title="Голосовать за пропуск")
