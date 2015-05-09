@@ -21,7 +21,7 @@ html(lang="ru")
                 b.caret
               ul.dropdown-menu
                 li: a(href="#" onclick="javascript:chatOnly()") ...все, кроме чата
-                li: a(href="#" onclick="javascript:removeVideo()") ...только видео
+                li: a(href="#" onclick="javascript:removeVideo(event)") ...только видео
           mixin navloginlogout(cname)
       section#mainpage
         .container

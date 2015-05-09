@@ -30,8 +30,8 @@ mixin navdefaultlinks(page)
       if loggedIn
         li: a(href="/logout?dest=#{encodeURIComponent(baseUrl + page)}&_csrf=#{csrfToken}") Выйти
         li.divider
-        li: a(href="/account/channels") Мои каналы
-        li: a(href="/account/profile") Настройки профиля
+        li: a(href="#{loginDomain}/account/channels") Мои каналы
+        li: a(href="#{loginDomain}/account/profile") Настройки профиля
         li: a(href="#{loginDomain}/account/edit") Настройки безопасности
       else
         li: a(href="#{loginDomain}/login?dest=#{encodeURIComponent(baseUrl + page)}") Авторизоваться
@@ -71,3 +71,4 @@ mixin navlogoutform(redirect)
     span#welcome Привет, #{loginName}!
     span &nbsp;&middot;&nbsp;
     a#logout.navbar-link(href="/logout?dest=#{encodeURIComponent(baseUrl + redirect)}&_csrf=#{csrfToken}") Выйти
+

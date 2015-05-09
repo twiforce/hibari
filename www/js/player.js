@@ -834,7 +834,7 @@ var UstreamPlayer = function (data) {
         iframe.attr("width", VWIDTH);
         iframe.attr("height", VHEIGHT);
         var wmode = USEROPTS.wmode_transparent ? "transparent" : "direct";
-        iframe.attr("src", "//www.ustream.tv/embed/"+self.videoId+"?v=3&wmode="+wmode);
+        iframe.attr("src", "//www.ustream.tv/embed/"+self.videoId+"?v=3&wmode="+wmode+"&autoplay=1");
         iframe.attr("frameborder", "0");
         iframe.attr("scrolling", "no");
         iframe.css("border", "none");
