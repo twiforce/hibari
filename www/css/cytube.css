@@ -154,7 +154,7 @@
     list-style: none outside none;
     margin-left: 0;
     max-height: 500px;
-    overflow-y: scroll;
+    overflow-y: auto;
 }
 
 
@@ -557,14 +557,14 @@ body.chatOnly .pm-panel, body.chatOnly .pm-panel-placeholder {
 }
 
 @media screen and (min-width: 768px) {
-    .modal {
-        padding: 30px;
-    }
-
     .modal-dialog {
         min-width: 600px!important;
         max-width: 1200px!important;
         width: auto!important;
+    }
+
+    .modal-dialog-nonfluid.modal-dialog {
+        max-width: 600px!important;
     }
 }
 
@@ -595,4 +595,61 @@ table td {
     font-size: 8pt;
     border: 1px solid;
     border-top-width: 0;
+}
+
+#emotelist table {
+    margin: auto;
+}
+
+.emote-preview-container {
+    width: 100px;
+    height: 100px;
+    float: left;
+    text-align: center;
+    white-space: nowrap;
+    margin: 5px;
+}
+
+.emote-preview-hax {
+    display: inline-block;
+    vertical-align: middle;
+    height: 100%;
+}
+
+.emote-preview {
+    max-width: 100px;
+    max-height: 100px;
+    cursor: pointer;
+}
+
+#emotelist-paginator-container {
+    text-align: center;
+}
+
+#leftcontrols .btn {
+    margin-right: 5px;
+}
+
+#videowrap .embed-responsive:-webkit-full-screen { width: 100%; }
+#videowrap .embed-responsive:-moz-full-screen { width: 100%; }
+#videowrap .embed-responsive:-ms-full-screen { width: 100%; }
+#videowrap .embed-responsive:-o-full-screen { width: 100%; }
+#videowrap .embed-responsive:full-screen { width: 100%; }
+
+li.vjs-menu-item.vjs-selected {
+    background-color: #66a8cc !important;
+}
+
+.video-js video::-webkit-media-text-track-container {
+    bottom: 50px;
+}
+
+input#logout[type="submit"] {
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+input#logout[type="submit"]:hover {
+    text-decoration: underline;
 }

@@ -66,8 +66,12 @@ mixin navloginform(redirect)
       span &nbsp;&middot;&nbsp;
       a#register.navbar-link(href="/register") Register
 
+
 mixin navlogoutform(redirect)
-  p#logoutform.navbar-text.pull-right
+  form#logoutform.navbar-text.pull-right(action="/logout", method="post")
+    input(type="hidden", name="dest", value=baseUrl + redirect)
+    input(type="hidden", name="_csrf", value=csrfToken)
     span#welcome Привет, #{loginName}!
     span &nbsp;&middot;&nbsp;
-    a#logout.navbar-link(href="/logout?dest=#{encodeURIComponent(baseUrl + redirect)}&_csrf=#{csrfToken}") Выйти
+    input#logout.navbar-link(type="submit", value="Выйти")
+
