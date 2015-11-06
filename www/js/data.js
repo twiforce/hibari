@@ -25,6 +25,7 @@ var CHANNEL = {
 };
 
 var PLAYER = false;
+var LIVESTREAM_CHROMELESS = false;
 var FLUIDLAYOUT = false;
 var VWIDTH;
 var VHEIGHT;
@@ -43,6 +44,7 @@ var IGNORED = [];
 var CHATHIST = [];
 var CHATHISTIDX = 0;
 var CHATTHROTTLE = false;
+var CHATMAXSIZE = 100;
 var SCROLLCHAT = true;
 var LASTCHAT = {
     name: ""
@@ -111,10 +113,12 @@ var USEROPTS = {
     ignore_channeljs     : getOrDefault("ignore_channeljs", false),
     sort_rank            : getOrDefault("sort_rank", true),
     sort_afk             : getOrDefault("sort_afk", false),
-    default_quality      : getOrDefault("default_quality", ""),
+    default_quality      : getOrDefault("default_quality", "auto"),
     boop                 : getOrDefault("boop", "never"),
     secure_connection    : getOrDefault("secure_connection", false),
-    show_shadowchat      : getOrDefault("show_shadowchat", false)
+    show_shadowchat      : getOrDefault("show_shadowchat", false),
+    emotelist_sort       : getOrDefault("emotelist_sort", true),
+    no_emotes            : getOrDefault("no_emotes", false)
 };
 
 /* Backwards compatibility check */
@@ -136,6 +140,22 @@ if (USEROPTS.boop === true) {
 if (["never", "onlyping", "always"].indexOf(USEROPTS.boop) === -1) {
     USEROPTS.boop = "onlyping";
 }
+
+// As of 3.8, preferred quality names are different
+(function () {
+    var fix = {
+        small: "240",
+        medium: "360",
+        large: "480",
+        hd720: "720",
+        hd1080: "1080",
+        highres: "best"
+    };
+
+    if (fix.hasOwnProperty(USEROPTS.default_quality)) {
+        USEROPTS.default_quality = fix[USEROPTS.default_quality];
+    }
+})();
 
 var VOLUME = parseFloat(getOrDefault("volume", 1));
 

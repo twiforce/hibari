@@ -37,8 +37,6 @@ function formatURL(data) {
             return "http://twitch.tv/" + data.id;
         case "cg":
             return "http://cybergame.tv/" + data.id;
-        case "hb":
-            return "http://hitbox.tv/" + data.id;
         case "rt":
             return data.id;
         case "jw":
@@ -51,6 +49,8 @@ function formatURL(data) {
             return "https://docs.google.com/file/d/" + data.id;
         case "fi":
             return data.id;
+        case "hb":
+            return "http://hitbox.tv/" + data.id;
         default:
             return "#";
     }
@@ -109,6 +109,15 @@ function formatUserlistItem(div) {
     }
 
     var profile = null;
+    /*
+     * 2015-10-19
+     * Prevent rendering unnecessary duplicates of the profile box when
+     * a user's status changes.
+     */
+    name.unbind("mouseenter");
+    name.unbind("mousemove");
+    name.unbind("mouseleave");
+
     name.mouseenter(function(ev) {
         if (profile)
             profile.remove();
@@ -614,23 +623,6 @@ function showUserOptions() {
     $("#us-layout").val(USEROPTS.layout);
     $("#us-no-channelcss").prop("checked", USEROPTS.ignore_channelcss);
     $("#us-no-channeljs").prop("checked", USEROPTS.ignore_channeljs);
-    var conninfo = "<strong>Информация о соединении: </strong>" +
-                   "Подключен к <code>" + IO_URL + "</code> (";
-    if (IO_V6) {
-        conninfo += "IPv6, ";
-    } else {
-        conninfo += "IPv4, ";
-    }
-
-    if (IO_URL === IO_URLS["ipv4-ssl"] || IO_URL === IO_URLS["ipv6-ssl"]) {
-        conninfo += "SSL)";
-    } else {
-        conninfo += "no SSL)";
-    }
-
-    conninfo += ".  SSL включен по умолчанию, если сервер поддерживает.";
-    $("#us-conninfo").html(conninfo);
-
 
     $("#us-synch").prop("checked", USEROPTS.synch);
     $("#us-synch-accuracy").val(USEROPTS.sync_accuracy);
@@ -732,9 +724,7 @@ function applyOpts() {
     }
 
     if(USEROPTS.hidevid) {
-        $("#qualitywrap").html("");
         removeVideo();
-        $("#chatwrap").removeClass("col-lg-5 col-md-5").addClass("col-lg-12 col-md-12");
     }
 
     $("#chatbtn").remove();
@@ -1222,7 +1212,7 @@ function parseMediaLink(url) {
     if(url.indexOf("jw:") == 0) {
         return {
             id: url.substring(3),
-            type: "jw"
+            type: "fi"
         };
     }
 
@@ -1386,10 +1376,10 @@ function sendVideoUpdate() {
     }
     PLAYER.getTime(function (seconds) {
         socket.emit("mediaUpdate", {
-            id: PLAYER.videoId,
+            id: PLAYER.mediaId,
             currentTime: seconds,
             paused: PLAYER.paused,
-            type: PLAYER.type
+            type: PLAYER.mediaType
         });
     });
 }
@@ -1501,10 +1491,7 @@ function addChatMessage(data) {
     div.mouseleave(function() {
         $(".nick-hover").removeClass("nick-hover");
     });
-    // Cap chatbox at most recent 100 messages
-    if($("#messagebuffer").children().length > 100) {
-        $($("#messagebuffer").children()[0]).remove();
-    }
+    trimChatBuffer();
     if(SCROLLCHAT)
         scrollChat();
 
@@ -1518,6 +1505,18 @@ function addChatMessage(data) {
 
     pingMessage(isHighlight);
 
+}
+
+function trimChatBuffer() {
+    var maxSize = window.CHATMAXSIZE;
+    if (!maxSize || typeof maxSize !== "number")
+        maxSize = parseInt(maxSize || 100, 10) || 100;
+    var buffer = document.getElementById("messagebuffer");
+    var count = buffer.childNodes.length - maxSize;
+
+    for (var i = 0; i < count; i++) {
+        buffer.firstChild.remove();
+    }
 }
 
 function pingMessage(isHighlight) {
@@ -1697,7 +1696,14 @@ function chatOnly() {
         .click(function () {
             $("#channeloptions").modal();
         });
+    $("<span/>").addClass("label label-default pull-right pointer")
+        .text("Emote List")
+        .appendTo($("#chatheader"))
+        .click(function () {
+            EMOTELIST.show();
+        });
     setVisible("#showchansettings", CLIENT.rank >= 2);
+
     $("body").addClass("chatOnly");
     handleWindowResize();
 }
@@ -1720,7 +1726,7 @@ function handleVideoResize() {
     var intv, ticks = 0;
     var resize = function () {
         if (++ticks > 10) clearInterval(intv);
-        if ($("#ytapiplayer").parent().height() === 0) return;
+        if ($("#ytapiplayer").parent().outerHeight() <= 0) return;
         clearInterval(intv);
 
         var responsiveFrame = $("#ytapiplayer").parent();
@@ -1906,30 +1912,18 @@ function waitUntilDefined(obj, key, fn) {
 }
 
 function hidePlayer() {
-    if(!PLAYER)
-        return;
+    /* 2015-09-16
+     * Originally used to hide the player while a modal was open because of
+     * certain flash videos that always rendered on top.  Seems to no longer
+     * be an issue.  Uncomment this if it is.
+    if (!PLAYER) return;
 
-    if(!/(chrome|MSIE)/ig.test(navigator.userAgent))
-        return;
-
-    PLAYER.size = {
-        width: $("#ytapiplayer").width(),
-        height: $("#ytapiplayer").height()
-    };
-
-    $("#ytapiplayer").attr("width", 1)
-        .attr("height", 1);
+    $("#ytapiplayer").hide();
+    */
 }
 
 function unhidePlayer() {
-    if(!PLAYER)
-        return;
-
-    if(!/(chrome|MSIE)/ig.test(navigator.userAgent))
-        return;
-
-    $("#ytapiplayer").width(PLAYER.size.width)
-        .height(PLAYER.size.height);
+    //$("#ytapiplayer").show();
 }
 
 function chatDialog(div) {
@@ -2855,4 +2849,116 @@ function googlePlusSimulator2014(data) {
     data.url = data.meta.gpdirect[q].url;
     data.contentType = data.meta.gpdirect[q].contentType;
     return data;
+}
+
+function EmoteList() {
+    this.modal = $("#emotelist");
+    this.modal.on("hidden.bs.modal", unhidePlayer);
+    this.table = document.querySelector("#emotelist table");
+    this.cols = 5;
+    this.itemsPerPage = 25;
+    this.emotes = [];
+    this.emoteListChanged = true;
+    this.page = 0;
+}
+
+EmoteList.prototype.handleChange = function () {
+    this.emotes = CHANNEL.emotes.slice();
+    if (USEROPTS.emotelist_sort) {
+        this.emotes.sort(function (a, b) {
+            var x = a.name.toLowerCase();
+            var y = b.name.toLowerCase();
+
+            if (x < y) {
+                return -1;
+            } else if (x > y) {
+                return 1;
+            } else {
+                return 0;
+            }
+        });
+    }
+
+    if (this.filter) {
+        this.emotes = this.emotes.filter(this.filter);
+    }
+
+    this.paginator = new NewPaginator(this.emotes.length, this.itemsPerPage,
+            this.loadPage.bind(this));
+    var container = document.getElementById("emotelist-paginator-container");
+    container.innerHTML = "";
+    container.appendChild(this.paginator.elem);
+    this.paginator.loadPage(this.page);
+    this.emoteListChanged = false;
+};
+
+EmoteList.prototype.show = function () {
+    if (this.emoteListChanged) {
+        this.handleChange();
+    }
+
+    this.modal.modal();
+};
+
+EmoteList.prototype.loadPage = function (page) {
+    var tbody = this.table.children[0];
+    tbody.innerHTML = "";
+
+    var row;
+    var start = page * this.itemsPerPage;
+    if (start >= this.emotes.length) return;
+    var end = Math.min(start + this.itemsPerPage, this.emotes.length);
+    var _this = this;
+
+    for (var i = start; i < end; i++) {
+        if ((i - start) % this.cols === 0) {
+            row = document.createElement("tr");
+            tbody.appendChild(row);
+        }
+
+        (function (emote) {
+            var td = document.createElement("td");
+            td.className = "emote-preview-container";
+
+            // Trick element to vertically align the emote within the container
+            var hax = document.createElement("span");
+            hax.className = "emote-preview-hax";
+            td.appendChild(hax);
+
+            var img = document.createElement("img");
+            img.src = emote.image;
+            img.className = "emote-preview";
+            img.title = emote.name;
+            img.onclick = function () {
+                var val = chatline.value;
+                if (!val) {
+                    chatline.value = emote.name;
+                } else {
+                    if (!val.charAt(val.length - 1).match(/\s/)) {
+                        chatline.value += " ";
+                    }
+                    chatline.value += emote.name;
+                }
+
+                _this.modal.modal("hide");
+                chatline.focus();
+            };
+
+            td.appendChild(img);
+            row.appendChild(td);
+        })(this.emotes[i]);
+    }
+
+    this.page = page;
+};
+
+window.EMOTELIST = new EmoteList();
+
+function showChannelSettings() {
+    hidePlayer();
+    $("#channeloptions").on("hidden.bs.modal", function () {
+        unhidePlayer();
+    });
+
+    $("#channeloptions").modal();
 }
