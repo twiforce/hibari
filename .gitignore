@@ -11,3 +11,5 @@ node_modules
 torlist
 www/cache
 .idea
+.vagrant
+Vagrantfile
