@@ -12,5 +12,6 @@ torlist
 www/cache
 .idea
 .vagrant
-Vagrantfilegoogle-drive-subtitles
+Vagrantfile
+google-drive-subtitles
 lib/
