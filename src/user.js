@@ -1,27 +1,32 @@
 var Logger = require("./logger");
 var Server = require("./server");
 var util = require("./utilities");
-var MakeEmitter = require("./emitter");
 var db = require("./database");
 var InfoGetter = require("./get-info");
 var Config = require("./config");
 var ACP = require("./acp");
 var Account = require("./account");
 var Flags = require("./flags");
+import { EventEmitter } from 'events';
 
 function User(socket) {
     var self = this;
-    MakeEmitter(self);
     self.flags = 0;
     self.socket = socket;
     self.realip = socket._realip;
     self.displayip = socket._displayip;
     self.hostmask = socket._hostmask;
-    self.account = Account.default(self.realip);
     self.channel = null;
     self.queueLimiter = util.newRateLimiter();
     self.chatLimiter = util.newRateLimiter();
+    self.reqPlaylistLimiter = util.newRateLimiter();
     self.awaytimer = false;
+    if (socket.user) {
+        self.account = new Account.Account(self.realip, socket.user, socket.aliases);
+        self.registrationTime = new Date(self.account.user.time);
+    } else {
+        self.account = new Account.Account(self.realip, null, socket.aliases);
+    }
 
     var announcement = Server.getServer().announcement;
     if (announcement != null) {
@@ -53,7 +58,30 @@ function User(socket) {
         }
 
         self.waitFlag(Flags.U_READY, function () {
-            var chan = Server.getServer().getChannel(data.name);
+            var chan;
+            try {
+                chan = Server.getServer().getChannel(data.name);
+            } catch (error) {
+                if (error.code !== 'EWRONGPART') {
+                    throw error;
+                }
+
+                self.socket.emit("errorMsg", {
+                    msg: "Channel '" + data.name + "' is hosted on another server.  " +
+                         "Try refreshing the page to update the connection URL."
+                });
+                return;
+            }
+
+            if (!chan.is(Flags.C_READY)) {
+                chan.once("loadFail", reason => {
+                    self.socket.emit("errorMsg", {
+                        msg: reason,
+                        alert: true
+                    });
+                    self.kick(`Channel could not be loaded: ${reason}`);
+                });
+            }
             chan.joinUser(self, data);
         });
     });
@@ -102,6 +130,8 @@ function User(socket) {
     });
 }
 
+User.prototype = Object.create(EventEmitter.prototype);
+
 User.prototype.die = function () {
     for (var key in this.socket._events) {
         delete this.socket._events[key];
@@ -142,7 +172,7 @@ User.prototype.waitFlag = function (flag, cb) {
     } else {
         var wait = function (f) {
             if (f === flag) {
-                self.unbind("setFlag", wait);
+                self.removeListener("setFlag", wait);
                 cb();
             }
         };
@@ -160,6 +190,10 @@ User.prototype.getLowerName = function () {
 
 User.prototype.inChannel = function () {
     return this.channel != null && !this.channel.dead;
+};
+
+User.prototype.inRegisteredChannel = function () {
+    return this.inChannel() && this.channel.is(Flags.C_REGISTERED);
 };
 
 /* Called when a user's AFK status changes */
@@ -268,30 +302,21 @@ User.prototype.login = function (name, pw) {
             return;
         }
 
-        var opts = { name: user.name };
-        if (self.inChannel()) {
-            opts.channel = self.channel.name;
-        }
+        self.account.user = user;
+        self.account.update();
+        self.socket.emit("rank", self.account.effectiveRank);
+        self.emit("effectiveRankChange", self.account.effectiveRank);
+        self.registrationTime = new Date(user.time);
         self.setFlag(Flags.U_REGISTERED);
-        self.refreshAccount(opts, function (err, account) {
-            if (err) {
-                Logger.errlog.log("[SEVERE] getAccount failed for user " + user.name);
-                Logger.errlog.log(err);
-                self.clearFlag(Flags.U_REGISTERED);
-                self.clearFlag(Flags.U_LOGGING_IN);
-                return;
-            }
-            self.socket.emit("login", {
-                success: true,
-                name: user.name
-            });
-            db.recordVisit(self.realip, self.getName());
-            self.socket.emit("rank", self.account.effectiveRank);
-            Logger.syslog.log(self.realip + " logged in as " + user.name);
-            self.setFlag(Flags.U_LOGGED_IN);
-            self.clearFlag(Flags.U_LOGGING_IN);
-            self.emit("login", self.account);
+        self.socket.emit("login", {
+            success: true,
+            name: user.name
         });
+        db.recordVisit(self.realip, self.getName());
+        Logger.syslog.log(self.realip + " logged in as " + user.name);
+        self.setFlag(Flags.U_LOGGED_IN);
+        self.clearFlag(Flags.U_LOGGING_IN);
+        self.emit("login", self.account);
     });
 };
 
@@ -356,28 +381,19 @@ User.prototype.guestLogin = function (name) {
         // Login succeeded
         lastguestlogin[self.realip] = Date.now();
 
-        var opts = { name: name };
-        if (self.inChannel()) {
-            opts.channel = self.channel.name;
-        }
-        self.refreshAccount(opts, function (err, account) {
-            if (err) {
-                Logger.errlog.log("[SEVERE] getAccount failed for guest login " + name);
-                Logger.errlog.log(err);
-                return;
-            }
-
-            self.socket.emit("login", {
-                success: true,
-                name: name,
-                guest: true
-            });
-            db.recordVisit(self.realip, self.getName());
-            self.socket.emit("rank", 0);
-            Logger.syslog.log(self.realip + " signed in as " + name);
-            self.setFlag(Flags.U_LOGGED_IN);
-            self.emit("login", self.account);
+        self.account.guestName = name;
+        self.account.update();
+        self.socket.emit("rank", self.account.effectiveRank);
+        self.emit("effectiveRankChange", self.account.effectiveRank);
+        self.socket.emit("login", {
+            success: true,
+            name: name,
+            guest: true
         });
+        db.recordVisit(self.realip, self.getName());
+        Logger.syslog.log(self.realip + " signed in as " + name);
+        self.setFlag(Flags.U_LOGGED_IN);
+        self.emit("login", self.account);
     });
 };
 
@@ -396,40 +412,28 @@ setInterval(function () {
     }
 }, 5 * 60 * 1000);
 
-User.prototype.refreshAccount = function (opts, cb) {
-    if (!cb) {
-        cb = opts;
-        opts = {};
+User.prototype.getFirstSeenTime = function getFirstSeenTime() {
+    if (this.registrationTime && this.socket.ipSessionFirstSeen) {
+        return Math.min(this.registrationTime.getTime(), this.socket.ipSessionFirstSeen.getTime());
+    } else if (this.registrationTime) {
+        return this.registrationTime.getTime();
+    } else if (this.socket.ipSessionFirstSeen) {
+        return this.socket.ipSessionFirstSeen.getTime();
+    } else {
+        Logger.errlog.log(`User "${this.getName()}" (IP: ${this.realip}) has neither ` +
+                "an IP sesion first seen time nor a registered account.");
+        return Date.now();
     }
+};
 
-    var different = false;
-    for (var key in opts) {
-        if (opts[key] !== this.account[key]) {
-            different = true;
-            break;
-        }
+User.prototype.setChannelRank = function setRank(rank) {
+    const changed = this.account.effectiveRank !== rank;
+    this.account.channelRank = rank;
+    this.account.update();
+    this.socket.emit("rank", this.account.effectiveRank);
+    if (changed) {
+        this.emit("effectiveRankChange", this.account.effectiveRank);
     }
-
-    if (!different) {
-        return;
-    }
-
-    var name = ("name" in opts) ? opts.name : this.account.name;
-    opts.registered = this.is(Flags.U_REGISTERED);
-    var self = this;
-    var old = this.account;
-    Account.getAccount(name, this.realip, opts, function (err, account) {
-        if (!err) {
-            /* Update account if anything changed in the meantime */
-            for (var key in old) {
-                if (self.account[key] !== old[key]) {
-                    account[key] = self.account[key];
-                }
-            }
-            self.account = account;
-        }
-        cb(err, account);
-    });
 };
 
 module.exports = User;

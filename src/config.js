@@ -34,7 +34,10 @@ var defaults = {
         "max-age": "7d",
         gzip: true,
         "gzip-threshold": 1024,
-        "cookie-secret": "change-me"
+        "cookie-secret": "change-me",
+        index: {
+            "max-entries": 50
+        }
     },
     https: {
         enabled: false,
@@ -50,7 +53,8 @@ var defaults = {
     io: {
         domain: "http://localhost",
         "default-port": 1337,
-        "ip-connection-limit": 10
+        "ip-connection-limit": 10,
+        "per-message-deflate": false
     },
     mail: {
         enabled: false,
@@ -86,13 +90,7 @@ var defaults = {
         channels: ["^(.*?[-_])?admin(istrator)?([-_].*)?$", "^(.*?[-_])?owner([-_].*)?$"],
         pagetitles: []
     },
-    "contacts": [
-        {
-            name: "calzoneman",
-            title: "Developer",
-            email: "cyzon@cytu.be"
-        }
-    ],
+    "contacts": [],
     "aggressive-gc": false,
     playlist: {
         "max-items": 4000,
@@ -112,7 +110,15 @@ var defaults = {
     },
     "channel-storage": {
         type: "file"
-    }
+    },
+    "service-socket": {
+        enabled: false,
+        socket: "service.sock"
+    },
+    "google-drive": {
+        "html5-hack-enabled": false
+    },
+    "twitch-client-id": null
 };
 
 /**
@@ -367,6 +373,21 @@ function preprocessConfig(cfg) {
             "https://developers.google.com/youtube/registering_an_application for " +
             "information on registering an API key.");
     }
+
+    if (cfg["twitch-client-id"]) {
+        require("cytube-mediaquery/lib/provider/twitch-vod").setClientID(
+                cfg["twitch-client-id"]);
+    } else {
+        Logger.errlog.log("Warning: No Twitch Client ID set.  Twitch VOD links will " +
+            "not work.  See twitch-client-id in config.template.yaml and " +
+            "https://github.com/justintv/Twitch-API/blob/master/authentication.md#developer-setup" +
+            "for more information on registering a client ID");
+    }
+
+    // Remove calzoneman from contact config (old default)
+    cfg.contacts = cfg.contacts.filter(contact => {
+        return contact.name !== 'calzoneman';
+    });
 
     return cfg;
 }

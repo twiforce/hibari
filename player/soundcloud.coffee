@@ -23,9 +23,14 @@ window.SoundCloudPlayer = class SoundCloudPlayer extends Player
             )
 
             # Soundcloud embed widget doesn't have a volume control.
-            volumeSlider = $('<div/>').attr('id', 'widget-volume')
-                .css('top', '170px')
+            sliderHolder = $('<div/>').attr('id', 'soundcloud-volume-holder')
                 .insertAfter(widget)
+            $('<span/>').attr('id', 'soundcloud-volume-label')
+                .addClass('label label-default')
+                .text('Volume')
+                .appendTo(sliderHolder)
+            volumeSlider = $('<div/>').attr('id', 'soundcloud-volume')
+                .appendTo(sliderHolder)
                 .slider(
                     range: 'min'
                     value: VOLUME * 100
@@ -64,6 +69,9 @@ window.SoundCloudPlayer = class SoundCloudPlayer extends Player
             else
                 soundUrl = data.id
             @soundcloud.load(soundUrl, auto_play: true)
+            @soundcloud.bind(SC.Widget.Events.READY, =>
+                @setVolume(VOLUME)
+            )
         else
             console.error('SoundCloudPlayer::load() called but soundcloud is not ready')
 

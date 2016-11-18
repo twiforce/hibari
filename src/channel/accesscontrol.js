@@ -30,19 +30,15 @@ AccessControlModule.prototype.onUserPreJoin = function (user, data, cb) {
         } else {
             user.socket.emit("needPassword", typeof data.pw !== "undefined");
             /* Option 1: log in as a moderator */
-            user.waitFlag(Flags.U_LOGGED_IN, function () {
-                user.refreshAccount({ channel: self.channel.name }, function (err, account) {
+            user.waitFlag(Flags.U_HAS_CHANNEL_RANK, function () {
+                if (user.is(Flags.U_IN_CHANNEL)) {
+                    return;
+                }
 
-                    /* Already joined the channel by some other condition */
-                    if (user.is(Flags.U_IN_CHANNEL)) {
-                        return;
-                    }
-
-                    if (account.effectiveRank >= 2) {
-                        cb(null, ChannelModule.PASSTHROUGH);
-                        user.socket.emit("cancelNeedPassword");
-                    }
-                });
+                if (user.account.effectiveRank >= 2) {
+                    cb(null, ChannelModule.PASSTHROUGH);
+                    user.socket.emit("cancelNeedPassword");
+                }
             });
 
             /* Option 2: Enter correct password */

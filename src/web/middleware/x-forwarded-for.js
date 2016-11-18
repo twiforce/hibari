@@ -22,9 +22,22 @@ export default function initialize(app, webConfig) {
         return req.ip;
     }
 
+    function getForwardedProto(req) {
+        const xForwardedProto = req.header('x-forwarded-proto');
+        if (xForwardedProto && xForwardedProto.match(/^https?$/)) {
+            return xForwardedProto;
+        } else {
+            return req.protocol;
+        }
+    }
+
     app.use((req, res, next) => {
         if (isTrustedProxy(req.ip)) {
             req.realIP = getForwardedIP(req);
+            req.realProtocol = getForwardedProto(req);
+        } else {
+            req.realIP = req.ip;
+            req.realProtocol = req.protocol;
         }
 
         next();

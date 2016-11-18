@@ -7,7 +7,6 @@ var Config = require("../config");
 var cookieParser = require("cookie-parser")(Config.get("http.cookie-secret"));
 var $util = require("../utilities");
 var Flags = require("../flags");
-var Account = require("../account");
 var typecheck = require("json-typecheck");
 var net = require("net");
 var util = require("../utilities");
@@ -15,6 +14,10 @@ var crypto = require("crypto");
 var isTorExit = require("../tor").isTorExit;
 var session = require("../session");
 import counters from '../counters';
+import { verifyIPSessionCookie } from '../web/middleware/ipsessioncookie';
+import Promise from 'bluebird';
+const verifySession = Promise.promisify(session.verifySession);
+const getAliases = Promise.promisify(db.getAliases);
 
 var CONNECT_RATE = {
     burst: 5,
@@ -25,33 +28,61 @@ var ipThrottle = {};
 // Keep track of number of connections per IP
 var ipCount = {};
 
+function parseCookies(socket, accept) {
+    var req = socket.request;
+    if (req.headers.cookie) {
+        cookieParser(req, null, () => {
+            accept(null, true);
+        });
+    } else {
+        req.cookies = {};
+        req.signedCookies = {};
+        accept(null, true);
+    }
+}
+
 /**
  * Called before an incoming socket.io connection is accepted.
  */
 function handleAuth(socket, accept) {
-    var data = socket.request;
+    socket.user = null;
+    socket.aliases = [];
 
-    socket.user = false;
-    if (data.headers.cookie) {
-        cookieParser(data, null, function () {
-            var auth = data.signedCookies.auth;
-            if (!auth) {
-                return accept(null, true);
-            }
-
-            session.verifySession(auth, function (err, user) {
-                if (!err) {
-                    socket.user = {
-                        name: user.name,
-                        global_rank: user.global_rank
-                    };
-                }
-                accept(null, true);
-            });
-        });
-    } else {
-        accept(null, true);
+    const promises = [];
+    const auth = socket.request.signedCookies.auth;
+    if (auth) {
+        promises.push(verifySession(auth).then(user => {
+            socket.user = Object.assign({}, user);
+        }).catch(error => {
+            // Do nothing
+        }));
     }
+
+    promises.push(getAliases(socket._realip).then(aliases => {
+        socket.aliases = aliases;
+    }).catch(error => {
+        // Do nothing
+    }));
+
+    Promise.all(promises).then(() => {
+        accept(null, true);
+    });
+}
+
+function handleIPSessionCookie(socket, accept) {
+    var cookie = socket.request.signedCookies['ip-session'];
+    if (!cookie) {
+        socket.ipSessionFirstSeen = new Date();
+        return accept(null, true);
+    }
+
+    var sessionMatch = verifyIPSessionCookie(socket._realip, cookie);
+    if (sessionMatch) {
+        socket.ipSessionFirstSeen = sessionMatch.date;
+    } else {
+        socket.ipSessionFirstSeen = new Date();
+    }
+    accept(null, true);
 }
 
 function throttleIP(sock) {
@@ -130,11 +161,45 @@ function addTypecheckedFunctions(sock) {
     };
 }
 
+function ipForwardingMiddleware(webConfig) {
+    function getForwardedIP(socket) {
+        var req = socket.client.request;
+        const xForwardedFor = req.headers['x-forwarded-for'];
+        if (!xForwardedFor) {
+            return socket.client.conn.remoteAddress;
+        }
+
+        const ipList = xForwardedFor.split(',');
+        for (let i = 0; i < ipList.length; i++) {
+            const ip = ipList[i].trim();
+            if (net.isIP(ip)) {
+                return ip;
+            }
+        }
+
+        return socket.client.conn.remoteAddress;
+    }
+
+    function isTrustedProxy(ip) {
+        return webConfig.getTrustedProxies().indexOf(ip) >= 0;
+    }
+
+    return function (socket, accept) {
+        if (isTrustedProxy(socket.client.conn.remoteAddress)) {
+            socket._realip = getForwardedIP(socket);
+        } else {
+            socket._realip = socket.client.conn.remoteAddress;
+        }
+
+        accept(null, true);
+    }
+}
+
 /**
  * Called after a connection is accepted
  */
 function handleConnection(sock) {
-    var ip = sock.client.conn.remoteAddress;
+    var ip = sock._realip;
     if (!ip) {
         sock.emit("kick", {
             reason: "Your IP address could not be determined from the socket connection.  See https://github.com/Automattic/socket.io/issues/1737 for details"
@@ -144,8 +209,8 @@ function handleConnection(sock) {
 
     if (net.isIPv6(ip)) {
         ip = util.expandIPv6(ip);
+        sock._realip = ip;
     }
-    sock._realip = ip;
     sock._displayip = $util.cloakIP(ip);
 
     if (isTorExit(ip)) {
@@ -178,27 +243,17 @@ function handleConnection(sock) {
     var user = new User(sock);
     if (sock.user) {
         user.setFlag(Flags.U_REGISTERED);
-        user.clearFlag(Flags.U_READY);
-        user.refreshAccount({ name: sock.user.name },
-                            function (err, account) {
-            if (err) {
-                user.clearFlag(Flags.U_REGISTERED);
-                user.setFlag(Flags.U_READY);
-                return;
-            }
-
-            user.socket.emit("login", {
-                success: true,
-                name: user.getName(),
-                guest: false
-            });
-            db.recordVisit(ip, user.getName());
-            user.socket.emit("rank", user.account.effectiveRank);
-            user.setFlag(Flags.U_LOGGED_IN);
-            user.emit("login", account);
-            Logger.syslog.log(ip + " logged in as " + user.getName());
-            user.setFlag(Flags.U_READY);
+        user.socket.emit("login", {
+            success: true,
+            name: user.getName(),
+            guest: false
         });
+        db.recordVisit(ip, user.getName());
+        user.socket.emit("rank", user.account.effectiveRank);
+        user.setFlag(Flags.U_LOGGED_IN);
+        user.emit("login", user.account);
+        Logger.syslog.log(ip + " logged in as " + user.getName());
+        user.setFlag(Flags.U_READY);
     } else {
         user.socket.emit("rank", -1);
         user.setFlag(Flags.U_READY);
@@ -206,10 +261,16 @@ function handleConnection(sock) {
 }
 
 module.exports = {
-    init: function (srv) {
+    init: function (srv, webConfig) {
         var bound = {};
+        const ioOptions = {
+            perMessageDeflate: Config.get("io.per-message-deflate")
+        };
         var io = sio.instance = sio();
 
+        io.use(ipForwardingMiddleware(webConfig));
+        io.use(parseCookies);
+        io.use(handleIPSessionCookie);
         io.use(handleAuth);
         io.on("connection", handleConnection);
 
@@ -224,7 +285,7 @@ module.exports = {
             }
 
             if (id in srv.servers) {
-                io.attach(srv.servers[id]);
+                io.attach(srv.servers[id], ioOptions);
             } else {
                 var server = require("http").createServer().listen(bind.port, bind.ip);
                 server.on("clientError", function (err, socket) {
@@ -233,12 +294,14 @@ module.exports = {
                     } catch (e) {
                     }
                 });
-                io.attach(server);
+                io.attach(server, ioOptions);
             }
 
             bound[id] = null;
         });
-    }
+    },
+
+    handleConnection: handleConnection
 };
 
 /* Clean out old rate limiters */

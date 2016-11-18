@@ -6,6 +6,7 @@ var Config = require("./config");
 var tables = require("./database/tables");
 var net = require("net");
 var util = require("./utilities");
+import * as Metrics from 'cytube-common/lib/metrics/metrics';
 
 var pool = null;
 var global_ipbans = {};
@@ -48,6 +49,7 @@ module.exports.init = function () {
  * Execute a database query
  */
 module.exports.query = function (query, sub, callback) {
+    const timer = Metrics.startTimer('db:queryTime');
     // 2nd argument is optional
     if (typeof sub === "function") {
         callback = sub;
@@ -75,6 +77,11 @@ module.exports.query = function (query, sub, callback) {
                     callback(null, res);
                 }
                 conn.release();
+                Metrics.stopTimer(timer);
+            }
+
+            if (process.env.SHOW_SQL) {
+                console.log(query);
             }
 
             if (sub) {
@@ -583,7 +590,7 @@ module.exports.loadAnnouncement = function () {
         var sv = Server.getServer();
         sv.announcement = announcement;
         for (var id in sv.ioServers) {
-            sv.ioServers[id].sockets.emit("announcement", announcement);
+            sv.ioServers[id].emit("announcement", announcement);
         }
     });
 };

@@ -1,3 +1,66 @@
+2016-11-02
+==========
+
+After upgrading the dependency on `yamljs`, you may see this error if you didn't
+notice and correct a typo in the config.yaml template:
+
+    Error loading config file config.yaml:
+    { [Error: Unexpected characters near ",".]
+      message: 'Unexpected characters near ",".',
+      parsedLine: 88,
+      snippet: 'title: \'CyTube\',' }
+
+The fix is to edit config.yaml and remove the trailing comma for the `title:`
+property under `html-template`.  If there are other syntax errors that the old
+version didn't detect, you will need to correct those as well.
+
+Longer term, I am looking to move away from using `yamljs` to parse
+configuration because it's a little buggy and the current configuration system
+is confusing.
+
+2016-10-20
+==========
+
+Google Drive changed the URL schema for retrieving video metadata, which broke
+CyTube's Google Drive support, even with the userscript.  I have updated the
+userscript source with the new URL, so server administrators will have to
+regenerate the userscript for their site and users will be prompted to install
+the newer version.
+
+Additionally, fixing Drive lookups required an update to the `mediaquery`
+module, so you will have to do an `npm install` to pull that fix in.
+
+2016-08-23
+==========
+
+A few weeks ago, the previous Google Drive player stopped working.  This is
+nothing new; Google Drive has consistently broken a few times a year ever since
+support for it was added.  However, it's becoming increasingly difficult and
+complicated to provide good support for Google Drive, so I've made the decision
+to phase out the native player and require a userscript for it, in order to
+bypass CORS and allow each browser to request the video stream itself.
+
+See [the updated documentation](docs/gdrive-userscript-serveradmins.md) for
+details on how to enable this for your users.
+
+2016-04-27
+==========
+
+A new dependency has been added on `cytube-common`, a module that will hold
+common code shared between the current version of CyTube and the upcoming work
+around splitting it into multiple services.  You will need to be sure to run
+`npm install` after pulling in this change to pull in the new dependency.
+
+2016-01-06
+==========
+
+This release updates socket.io to version 1.4.0.  The updates to socket.io
+include a few security-related fixes, so please be sure to run `npm install`
+to ensure the updated version is installed before restarting your CyTube server.
+
+  * https://nodesecurity.io/advisories/67
+  * https://github.com/socketio/engine.io/commit/391ce0dc8b88a6609d88db83ea064040a05ab803
+
 2015-10-25
 ==========
 

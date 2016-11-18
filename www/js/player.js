@@ -1,5 +1,5 @@
 (function() {
-  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDriveYouTubePlayer, HITBOX_ERROR, HitboxPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, USTREAM_ERROR, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
+  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDrivePlayer, GoogleDriveYouTubePlayer, HLSPlayer, HitboxPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, USTREAM_ERROR, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -45,6 +45,8 @@
     Player.prototype.getVolume = function(cb) {
       return cb(VOLUME);
     };
+
+    Player.prototype.destroy = function() {};
 
     return Player;
 
@@ -501,26 +503,26 @@
       if (!(this instanceof VideoJSPlayer)) {
         return new VideoJSPlayer(data);
       }
-      this.setMediaProperties(data);
-      this.loadPlayer(data);
+      this.load(data);
     }
 
     VideoJSPlayer.prototype.loadPlayer = function(data) {
       return waitUntilDefined(window, 'videojs', (function(_this) {
         return function() {
-          var sources, video;
+          var video;
           video = $('<video/>').addClass('video-js vjs-default-skin embed-responsive-item').attr({
             width: '100%',
             height: '100%'
           });
           removeOld(video);
-          sources = sortSources(data.meta.direct);
-          if (sources.length === 0) {
+          _this.sources = sortSources(data.meta.direct);
+          if (_this.sources.length === 0) {
             console.error('VideoJSPlayer::constructor(): data.meta.direct has no sources!');
             _this.mediaType = null;
             return;
           }
-          sources.forEach(function(source) {
+          _this.sourceIdx = 0;
+          _this.sources.forEach(function(source) {
             return $('<source/>').attr({
               src: source.src,
               type: source.type,
@@ -547,6 +549,22 @@
             controls: true
           });
           return _this.player.ready(function() {
+            _this.player.on('error', function() {
+              var err;
+              err = _this.player.error();
+              if (err && err.code === 4) {
+                console.error('Caught error, trying next source');
+                _this.sourceIdx++;
+                if (_this.sourceIdx < _this.sources.length) {
+                  return _this.player.src(_this.sources[_this.sourceIdx]);
+                } else {
+                  console.error('Out of sources, video will not play');
+                  if (_this.mediaType === 'gd' && !window.hasDriveUserscript) {
+                    return window.promptToInstallDriveUserscript();
+                  }
+                }
+              }
+            });
             _this.setVolume(VOLUME);
             _this.player.on('ended', function() {
               if (CLIENT.leader) {
@@ -570,12 +588,14 @@
             });
             return setTimeout(function() {
               return $('#ytapiplayer .vjs-subtitles-button .vjs-menu-item').each(function(i, elem) {
-                if (elem.textContent === localStorage.lastSubtitle) {
+                var textNode;
+                textNode = elem.childNodes[0];
+                if (textNode.textContent === localStorage.lastSubtitle) {
                   elem.click();
                 }
                 return elem.onclick = function() {
-                  if (elem.attributes['aria-selected'].value === 'true') {
-                    return localStorage.lastSubtitle = elem.textContent;
+                  if (elem.attributes['aria-checked'].value === 'true') {
+                    return localStorage.lastSubtitle = textNode.textContent;
                   }
                 };
               });
@@ -587,6 +607,7 @@
 
     VideoJSPlayer.prototype.load = function(data) {
       this.setMediaProperties(data);
+      this.destroy();
       return this.loadPlayer(data);
     };
 
@@ -636,9 +657,66 @@
       }
     };
 
+    VideoJSPlayer.prototype.destroy = function() {
+      removeOld();
+      if (this.player) {
+        return this.player.dispose();
+      }
+    };
+
     return VideoJSPlayer;
 
   })(Player);
+
+  window.GoogleDrivePlayer = GoogleDrivePlayer = (function(superClass) {
+    extend(GoogleDrivePlayer, superClass);
+
+    function GoogleDrivePlayer(data) {
+      if (!(this instanceof GoogleDrivePlayer)) {
+        return new GoogleDrivePlayer(data);
+      }
+      GoogleDrivePlayer.__super__.constructor.call(this, data);
+    }
+
+    GoogleDrivePlayer.prototype.load = function(data) {
+      if (!window.hasDriveUserscript && !data.meta.direct) {
+        window.promptToInstallDriveUserscript();
+      } else if (window.hasDriveUserscript) {
+        window.maybePromptToUpgradeUserscript();
+      }
+      if (typeof window.getGoogleDriveMetadata === 'function') {
+        return setTimeout((function(_this) {
+          return function() {
+            return backoffRetry(function(cb) {
+              return window.getGoogleDriveMetadata(data.id, cb);
+            }, function(error, metadata) {
+              var alertBox;
+              if (error) {
+                console.error(error);
+                alertBox = window.document.createElement('div');
+                alertBox.className = 'alert alert-danger';
+                alertBox.textContent = error;
+                return document.getElementById('ytapiplayer').appendChild(alertBox);
+              } else {
+                data.meta.direct = metadata.videoMap;
+                return GoogleDrivePlayer.__super__.load.call(_this, data);
+              }
+            }, {
+              maxTries: 3,
+              delay: 1000,
+              factor: 1.2,
+              jitter: 500
+            });
+          };
+        })(this), Math.random() * 1000);
+      } else {
+        return GoogleDrivePlayer.__super__.load.call(this, data);
+      }
+    };
+
+    return GoogleDrivePlayer;
+
+  })(VideoJSPlayer);
 
   codecToMimeType = function(codec) {
     switch (codec) {
@@ -654,7 +732,7 @@
       case 'mp3':
         return 'audio/mp3';
       case 'vorbis':
-        return 'audio/vorbis';
+        return 'audio/ogg';
       default:
         return 'video/flv';
     }
@@ -704,7 +782,7 @@
       this.setMediaProperties(data);
       waitUntilDefined(window, 'SC', (function(_this) {
         return function() {
-          var soundUrl, volumeSlider, widget;
+          var sliderHolder, soundUrl, volumeSlider, widget;
           removeOld();
           if (data.meta.scuri) {
             soundUrl = data.meta.scuri;
@@ -716,7 +794,9 @@
             id: 'scplayer',
             src: "https://w.soundcloud.com/player/?url=" + soundUrl
           });
-          volumeSlider = $('<div/>').attr('id', 'widget-volume').css('top', '170px').insertAfter(widget).slider({
+          sliderHolder = $('<div/>').attr('id', 'soundcloud-volume-holder').insertAfter(widget);
+          $('<span/>').attr('id', 'soundcloud-volume-label').addClass('label label-default').text('Volume').appendTo(sliderHolder);
+          volumeSlider = $('<div/>').attr('id', 'soundcloud-volume').appendTo(sliderHolder).slider({
             range: 'min',
             value: VOLUME * 100,
             stop: function(event, ui) {
@@ -759,9 +839,14 @@
         } else {
           soundUrl = data.id;
         }
-        return this.soundcloud.load(soundUrl, {
+        this.soundcloud.load(soundUrl, {
           auto_play: true
         });
+        return this.soundcloud.bind(SC.Widget.Events.READY, (function(_this) {
+          return function() {
+            return _this.setVolume(VOLUME);
+          };
+        })(this));
       } else {
         return console.error('SoundCloudPlayer::load() called but soundcloud is not ready');
       }
@@ -881,7 +966,8 @@
       } else {
         iframe = $('<iframe/>').attr({
           src: embed.src,
-          frameborder: '0'
+          frameborder: '0',
+          allowfullscreen: '1'
         });
         return iframe;
       }
@@ -891,18 +977,6 @@
 
   })(Player);
 
-  window.twitchEventCallback = function(events) {
-    if (!(PLAYER instanceof TwitchPlayer)) {
-      return false;
-    }
-    return events.forEach(function(event) {
-      if (event.event === 'playerInit') {
-        PLAYER.twitch.unmute();
-        return PLAYER.twitch.ready = true;
-      }
-    });
-  };
-
   window.TwitchPlayer = TwitchPlayer = (function(superClass) {
     extend(TwitchPlayer, superClass);
 
@@ -910,23 +984,160 @@
       if (!(this instanceof TwitchPlayer)) {
         return new TwitchPlayer(data);
       }
-      this.load(data);
+      this.setMediaProperties(data);
+      waitUntilDefined(window, 'Twitch', (function(_this) {
+        return function() {
+          return waitUntilDefined(Twitch, 'Player', function() {
+            return _this.init(data);
+          });
+        };
+      })(this));
     }
 
+    TwitchPlayer.prototype.init = function(data) {
+      var options;
+      removeOld();
+      if (data.type === 'tv') {
+        options = {
+          video: data.id
+        };
+      } else {
+        options = {
+          channel: data.id
+        };
+      }
+      this.twitch = new Twitch.Player('ytapiplayer', options);
+      return this.twitch.addEventListener(Twitch.Player.READY, (function(_this) {
+        return function() {
+          _this.setVolume(VOLUME);
+          _this.twitch.setQuality(_this.mapQuality(USEROPTS.default_quality));
+          _this.twitch.addEventListener(Twitch.Player.PLAY, function() {
+            _this.paused = false;
+            if (CLIENT.leader) {
+              return sendVideoUpdate();
+            }
+          });
+          _this.twitch.addEventListener(Twitch.Player.PAUSE, function() {
+            _this.paused = true;
+            if (CLIENT.leader) {
+              return sendVideoUpdate();
+            }
+          });
+          return _this.twitch.addEventListener(Twitch.Player.ENDED, function() {
+            if (CLIENT.leader) {
+              return socket.emit('playNext');
+            }
+          });
+        };
+      })(this));
+    };
+
     TwitchPlayer.prototype.load = function(data) {
-      data.meta.embed = {
-        src: '//www-cdn.jtvnw.net/swflibs/TwitchPlayer.swf',
-        tag: 'object',
-        params: {
-          flashvars: "embed=1&hostname=localhost&channel=" + data.id + "& eventsCallback=twitchEventCallback&auto_play=true&start_volume=" + (Math.floor(VOLUME * 100))
+      var error;
+      this.setMediaProperties(data);
+      try {
+        if (data.type === 'tv') {
+          return this.twitch.setVideo(data.id);
+        } else {
+          return this.twitch.setChannel(data.id);
         }
-      };
-      return TwitchPlayer.__super__.load.call(this, data);
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.pause = function() {
+      var error;
+      try {
+        this.twitch.pause();
+        return this.paused = true;
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.play = function() {
+      var error;
+      try {
+        this.twitch.play();
+        return this.paused = false;
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.seekTo = function(time) {
+      var error;
+      try {
+        return this.twitch.seek(time);
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.getTime = function(cb) {
+      var error;
+      try {
+        return cb(this.twitch.getCurrentTime());
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.setVolume = function(volume) {
+      var error;
+      try {
+        this.twitch.setVolume(volume);
+        if (volume > 0) {
+          return this.twitch.setMuted(false);
+        }
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.getVolume = function(cb) {
+      var error;
+      try {
+        if (this.twitch.isPaused()) {
+          return cb(0);
+        } else {
+          return cb(this.twitch.getVolume());
+        }
+      } catch (error1) {
+        error = error1;
+        return console.error(error);
+      }
+    };
+
+    TwitchPlayer.prototype.mapQuality = function(quality) {
+      switch (String(quality)) {
+        case '1080':
+          return 'chunked';
+        case '720':
+          return 'high';
+        case '480':
+          return 'medium';
+        case '360':
+          return 'low';
+        case '240':
+          return 'mobile';
+        case 'best':
+          return 'chunked';
+        default:
+          return '';
+      }
     };
 
     return TwitchPlayer;
 
-  })(EmbedPlayer);
+  })(Player);
 
   window.LivestreamPlayer = LivestreamPlayer = (function(superClass) {
     extend(LivestreamPlayer, superClass);
@@ -1021,12 +1232,6 @@
 
   })(EmbedPlayer);
 
-  window.rtmpEventHandler = function(id, event, data) {
-    if (event === 'volumechange') {
-      return PLAYER.volume = data.muted ? 0 : data.volume;
-    }
-  };
-
   window.RTMPPlayer = RTMPPlayer = (function(superClass) {
     extend(RTMPPlayer, superClass);
 
@@ -1034,30 +1239,28 @@
       if (!(this instanceof RTMPPlayer)) {
         return new RTMPPlayer(data);
       }
-      this.volume = VOLUME;
-      this.load(data);
+      this.setupMeta(data);
+      RTMPPlayer.__super__.constructor.call(this, data);
     }
 
     RTMPPlayer.prototype.load = function(data) {
-      data.meta.embed = {
-        tag: 'object',
-        src: 'https://fpdownload.adobe.com/strobe/FlashMediaPlayback_101.swf',
-        params: {
-          flashvars: "src=" + data.id + "&streamType=live&javascriptCallbackFunction=rtmpEventHandler&autoPlay=true&volume=" + VOLUME
-        }
-      };
+      this.setupMeta(data);
       return RTMPPlayer.__super__.load.call(this, data);
     };
 
-    RTMPPlayer.prototype.getVolume = function(cb) {
-      return cb(this.volume);
+    RTMPPlayer.prototype.setupMeta = function(data) {
+      return data.meta.direct = {
+        480: [
+          {
+            link: data.id
+          }
+        ]
+      };
     };
 
     return RTMPPlayer;
 
-  })(EmbedPlayer);
-
-  HITBOX_ERROR = 'Hitbox.tv only serves its content over plain HTTP, but you are viewing this page over secure HTTPS.  Your browser therefore blocks the hitbox embed due to mixed content policy.  In order to view hitbox, you must view this page over plain HTTP (change "https://" to "http://" in the address bar)-- your websocket will still be connected using secure HTTPS.  This is something I have asked Hitbox to fix but they have not done so yet.';
+  })(VideoJSPlayer);
 
   window.HitboxPlayer = HitboxPlayer = (function(superClass) {
     extend(HitboxPlayer, superClass);
@@ -1071,13 +1274,11 @@
 
     HitboxPlayer.prototype.load = function(data) {
       data.meta.embed = {
-        src: "http://hitbox.tv/embed/" + data.id,
+        src: "https://www.hitbox.tv/embed/" + data.id,
         tag: 'iframe'
       };
       return HitboxPlayer.__super__.load.call(this, data);
     };
-
-    HitboxPlayer.prototype.mixedContentError = HITBOX_ERROR;
 
     return HitboxPlayer;
 
@@ -1144,6 +1345,7 @@
 
     GoogleDriveYouTubePlayer.prototype.init = function(data) {
       var embed;
+      window.promptToInstallDriveUserscript();
       embed = $('<embed />').attr({
         type: 'application/x-shockwave-flash',
         src: "https://www.youtube.com/get_player?docid=" + data.id + "&ps=docs&partnerid=30&enablejsapi=1&cc_load_policy=1&auth_timeout=86400000000",
@@ -1166,6 +1368,7 @@
     };
 
     GoogleDriveYouTubePlayer.prototype.load = function(data) {
+      this.yt = null;
       this.setMediaProperties(data);
       return this.init(data);
     };
@@ -1272,26 +1475,95 @@
 
   })(Player);
 
+  window.promptToInstallDriveUserscript = function() {
+    var alertBox, closeButton, infoLink;
+    if (document.getElementById('prompt-install-drive-userscript')) {
+      return;
+    }
+    alertBox = document.createElement('div');
+    alertBox.id = 'prompt-install-drive-userscript';
+    alertBox.className = 'alert alert-info';
+    alertBox.innerHTML = "Due to continual breaking changes making it increasingly difficult to\nmaintain Google Drive support, you can now install a userscript that\nsimplifies the code and has better compatibility.  In the future, the\nold player will be removed.";
+    alertBox.appendChild(document.createElement('br'));
+    infoLink = document.createElement('a');
+    infoLink.className = 'btn btn-info';
+    infoLink.href = '/google_drive_userscript';
+    infoLink.textContent = 'Click here for details';
+    infoLink.target = '_blank';
+    alertBox.appendChild(infoLink);
+    closeButton = document.createElement('button');
+    closeButton.className = 'close pull-right';
+    closeButton.innerHTML = '&times;';
+    closeButton.onclick = function() {
+      return alertBox.parentNode.removeChild(alertBox);
+    };
+    alertBox.insertBefore(closeButton, alertBox.firstChild);
+    return document.getElementById('videowrap').appendChild(alertBox);
+  };
+
+  window.HLSPlayer = HLSPlayer = (function(superClass) {
+    extend(HLSPlayer, superClass);
+
+    function HLSPlayer(data) {
+      if (!(this instanceof HLSPlayer)) {
+        return new HLSPlayer(data);
+      }
+      this.setupMeta(data);
+      HLSPlayer.__super__.constructor.call(this, data);
+    }
+
+    HLSPlayer.prototype.load = function(data) {
+      this.setupMeta(data);
+      return HLSPlayer.__super__.load.call(this, data);
+    };
+
+    HLSPlayer.prototype.setupMeta = function(data) {
+      return data.meta.direct = {
+        480: [
+          {
+            link: data.id,
+            contentType: 'application/x-mpegURL'
+          }
+        ]
+      };
+    };
+
+    return HLSPlayer;
+
+  })(VideoJSPlayer);
+
   TYPE_MAP = {
     yt: YouTubePlayer,
     vi: VimeoPlayer,
     dm: DailymotionPlayer,
-    gd: GoogleDriveYouTubePlayer,
+    gd: GoogleDrivePlayer,
     gp: VideoJSPlayer,
     fi: FilePlayer,
     jw: FilePlayer,
     sc: SoundCloudPlayer,
     li: LivestreamPlayer,
     tw: TwitchPlayer,
+    tv: TwitchPlayer,
     cu: CustomEmbedPlayer,
     rt: RTMPPlayer,
     hb: HitboxPlayer,
     us: UstreamPlayer,
-    im: ImgurPlayer
+    im: ImgurPlayer,
+    vm: VideoJSPlayer,
+    hl: HLSPlayer,
+    sb: VideoJSPlayer
   };
 
   window.loadMediaPlayer = function(data) {
-    var e, error1, error2;
+    var e, error;
+    try {
+      if (window.PLAYER) {
+        window.PLAYER.destroy();
+      }
+    } catch (error1) {
+      error = error1;
+      console.error(error);
+    }
     if (data.meta.direct && data.type !== 'gd') {
       try {
         return window.PLAYER = new VideoJSPlayer(data);
@@ -1302,8 +1574,8 @@
     } else if (data.type in TYPE_MAP) {
       try {
         return window.PLAYER = TYPE_MAP[data.type](data);
-      } catch (error2) {
-        e = error2;
+      } catch (error1) {
+        e = error1;
         return console.error(e);
       }
     }
@@ -1364,7 +1636,7 @@
 
   window.removeOld = function(replace) {
     var old;
-    $('#sc_volume').remove();
+    $('#soundcloud-volume-holder').remove();
     if (replace == null) {
       replace = $('<div/>').addClass('embed-responsive-item');
     }

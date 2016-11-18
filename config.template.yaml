@@ -66,6 +66,9 @@ http:
   gzip-threshold: 1024
   # Secret used for signed cookies.  Can be anything, but make it unique and hard to guess
   cookie-secret: 'change-me'
+  index:
+    # Maximum number of channels to display on the index page public channel list
+    max-entries: 50
 
 # HTTPS server details
 https:
@@ -88,7 +91,7 @@ https:
 # Page template values
 # title goes in the upper left corner, description goes in a <meta> tag
 html-template:
-  title: 'CyTube',
+  title: 'Sync'
   description: 'Free, open source synchtube'
 
 # Socket.IO server details
@@ -105,6 +108,11 @@ io:
   default-port: 1337
   # limit the number of concurrent socket connections per IP address
   ip-connection-limit: 10
+  # Whether or not to use zlib to compress each socket message (this option is
+  # passed through to socket.io/engine.io).
+  # Note that while this may save a little bandwidth, it also consumes a lot
+  # more CPU and will bottleneck pretty quickly under heavy load.
+  per-message-deflate: false
 
 # Mailer details (used for sending password reset links)
 # see https://github.com/andris9/Nodemailer
@@ -182,10 +190,12 @@ reserved-names:
   pagetitles: []
 
 # Provide a contact list for the /contact page
-contacts:
-  - name: 'calzoneman'
-    title: 'Developer'
-    email: 'cyzon@cytu.be'
+# Example:
+# contacts:
+#   - name: 'my_name'
+#     title: 'administrator
+#     email: 'me@my.site'
+contacts: []
 
 playlist:
   max-items: 4000
@@ -229,3 +239,13 @@ setuid:
 # concurrent updates), then run `node lib/channel-storage/migrate.js`.
 channel-storage:
   type: 'file'
+
+# Allows for external services to access the system commandline
+# Useful for setups where stdin isn't available such as when using PM2
+service-socket:
+  enabled: false
+  socket: 'service.sock'
+
+# Twitch Client ID for the data API (used for VOD lookups)
+# https://github.com/justintv/Twitch-API/blob/master/authentication.md#developer-setup
+twitch-client-id: null

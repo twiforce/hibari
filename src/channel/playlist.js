@@ -11,6 +11,13 @@ var CustomEmbedFilter = require("../customembed").filter;
 var XSS = require("../xss");
 
 const MAX_ITEMS = Config.get("playlist.max-items");
+// Limit requestPlaylist to once per 60 seconds
+const REQ_PLAYLIST_THROTTLE = {
+    burst: 1,
+    sustained: 0,
+    cooldown: 60
+};
+
 
 const TYPE_QUEUE = {
     id: "string,boolean",
@@ -216,9 +223,7 @@ PlaylistModule.prototype.onUserPostJoin = function (user) {
     user.socket.on("playerReady", function () {
         self.sendChangeMedia([user]);
     });
-    user.socket.on("requestPlaylist", function () {
-        self.sendPlaylist([user]);
-    });
+    user.socket.on("requestPlaylist", this.handleRequestPlaylist.bind(this, user));
     user.on("login", function () {
         self.sendPlaylist([user]);
     });
@@ -356,25 +361,29 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
     if (data.type === "yp" && !perms.canAddList(user)) {
         user.socket.emit("queueFail", {
             msg: "You don't have permission to add playlists",
-            link: link
+            link: link,
+            id: id
         });
         return;
     } else if (util.isLive(type) && !perms.canAddLive(user)) {
         user.socket.emit("queueFail", {
             msg: "You don't have permission to add live media",
-            link: link
+            link: link,
+            id: id
         });
         return;
     } else if (type === "cu" && !perms.canAddCustom(user)) {
         user.socket.emit("queueFail", {
             msg: "You don't have permission to add custom embeds",
-            link: link
+            link: link,
+            id: id
         });
         return;
     } else if (type === "fi" && !perms.canAddRawFile(user)) {
         user.socket.emit("queueFail", {
             msg: "You don't have permission to add raw video files",
-            link: link
+            link: link,
+            id: id
         });
         return;
     }
@@ -407,7 +416,8 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
     if (user.queueLimiter.throttle(limit)) {
         user.socket.emit("queueFail", {
             msg: "You are adding videos too quickly",
-            link: link
+            link: link,
+            id: id
         });
         return;
     }
@@ -443,20 +453,31 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
     var error = function (what) {
         user.socket.emit("queueFail", {
             msg: what,
-            link: data.link
+            link: data.link,
+            id: data.id
         });
     };
 
-    var self = this;
-    this.channel.activeLock.lock();
+    const self = this;
+    this.channel.refCounter.ref("PlaylistModule::queueStandard");
     this.semaphore.queue(function (lock) {
         var lib = self.channel.modules.library;
         if (lib && self.channel.is(Flags.C_REGISTERED) && !util.isLive(data.type)) {
             lib.getItem(data.id, function (err, item) {
                 if (err && err !== "Item not in library") {
                     error(err+"");
-                    self.channel.activeLock.release();
+                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
                     return lock.release();
+                }
+
+                // YouTube livestreams transition to becoming regular videos,
+                // breaking the cached duration of 0.
+                // In the future, the media cache should be decoupled from
+                // the library and this will no longer be an issue, but for now
+                // treat 0-length yt library entries as non-existent.
+                if (item.type === "yt" && item.seconds === 0) {
+                    data.type = "yt"; // Kludge -- library queue has type: "lib"
+                    item = null;
                 }
 
                 if (item !== null) {
@@ -464,7 +485,7 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
                     data.shouldAddToLibrary = false;
                     self._addItem(item, data, user, function () {
                         lock.release();
-                        self.channel.activeLock.release();
+                        self.channel.refCounter.unref("PlaylistModule::queueStandard");
                     });
                 } else {
                     handleLookup();
@@ -475,16 +496,17 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
         }
 
         function handleLookup() {
+            var channelName = self.channel.name;
             InfoGetter.getMedia(data.id, data.type, function (err, media) {
                 if (err) {
                     error(XSS.sanitizeText(String(err)));
-                    self.channel.activeLock.release();
+                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
                     return lock.release();
                 }
 
                 self._addItem(media, data, user, function () {
                     lock.release();
-                    self.channel.activeLock.release();
+                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
                 });
             });
         }
@@ -495,7 +517,8 @@ PlaylistModule.prototype.queueYouTubePlaylist = function (user, data) {
     var error = function (what) {
         user.socket.emit("queueFail", {
             msg: what,
-            link: data.link
+            link: data.link,
+            id: data.id
         });
     };
 
@@ -523,12 +546,12 @@ PlaylistModule.prototype.queueYouTubePlaylist = function (user, data) {
                 }
             }
 
-            self.channel.activeLock.lock();
+            self.channel.refCounter.ref("PlaylistModule::queueYouTubePlaylist");
             vids.forEach(function (media) {
                 data.link = util.formatLink(media.id, media.type);
                 self._addItem(media, data, user);
             });
-            self.channel.activeLock.release();
+            self.channel.refCounter.unref("PlaylistModule::queueYouTubePlaylist");
 
             lock.release();
         });
@@ -547,7 +570,7 @@ PlaylistModule.prototype.handleDelete = function (user, data) {
     }
 
     var plitem = this.items.find(data);
-    self.channel.activeLock.lock();
+    self.channel.refCounter.ref("PlaylistModule::handleDelete");
     this.semaphore.queue(function (lock) {
         if (self._delete(data)) {
             self.channel.logger.log("[playlist] " + user.getName() + " deleted " +
@@ -555,7 +578,7 @@ PlaylistModule.prototype.handleDelete = function (user, data) {
         }
 
         lock.release();
-        self.channel.activeLock.release();
+        self.channel.refCounter.unref("PlaylistModule::handleDelete");
     });
 };
 
@@ -589,27 +612,27 @@ PlaylistModule.prototype.handleMoveMedia = function (user, data) {
         return;
     }
 
-    var self = this;
-    self.channel.activeLock.lock();
+    const self = this;
+    self.channel.refCounter.ref("PlaylistModule::handleMoveMedia");
     self.semaphore.queue(function (lock) {
         if (!self.items.remove(data.from)) {
-            self.channel.activeLock.release();
+            self.channel.refCounter.unref("PlaylistModule::handleMoveMedia");
             return lock.release();
         }
 
         if (data.after === "prepend") {
             if (!self.items.prepend(from)) {
-                self.channel.activeLock.release();
+                self.channel.refCounter.unref("PlaylistModule::handleMoveMedia");
                 return lock.release();
             }
         } else if (data.after === "append") {
             if (!self.items.append(from)) {
-                self.channel.activeLock.release();
+                self.channel.refCounter.unref("PlaylistModule::handleMoveMedia");
                 return lock.release();
             }
         } else {
             if (!self.items.insertAfter(from, data.after)) {
-                self.channel.activeLock.release();
+                self.channel.refCounter.unref("PlaylistModule::handleMoveMedia");
                 return lock.release();
             }
         }
@@ -620,7 +643,7 @@ PlaylistModule.prototype.handleMoveMedia = function (user, data) {
                                 from.media.title +
                                 (after ? " after " + after.media.title : ""));
         lock.release();
-        self.channel.activeLock.release();
+        self.channel.refCounter.unref("PlaylistModule::handleMoveMedia");
     });
 };
 
@@ -662,7 +685,7 @@ PlaylistModule.prototype.handlePlayNext = function (user) {
         title = this.current.media.title;
     }
 
-    this.channel.logger.log("[playlist] " + user.getName() + " skipped" + title);
+    this.channel.logger.log("[playlist] " + user.getName() + " skipped " + title);
     this._playNext();
 };
 
@@ -734,6 +757,7 @@ PlaylistModule.prototype.handleAssignLeader = function (user, data) {
         this.leader = null;
         if (old.account.effectiveRank === 1.5) {
             old.account.effectiveRank = old.account.oldRank;
+            old.emit("effectiveRankChange", old.account.effectiveRank);
             old.socket.emit("rank", old.account.effectiveRank);
         }
 
@@ -760,6 +784,7 @@ PlaylistModule.prototype.handleAssignLeader = function (user, data) {
             if (this.leader.account.effectiveRank < 1.5) {
                 this.leader.account.oldRank = this.leader.account.effectiveRank;
                 this.leader.account.effectiveRank = 1.5;
+                this.leader.emit("effectiveRankChange", 1.5);
                 this.leader.socket.emit("rank", 1.5);
             }
 
@@ -857,7 +882,8 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     var qfail = function (msg) {
         user.socket.emit("queueFail", {
             msg: msg,
-            link: data.link
+            link: data.link,
+            id: data.id
         });
         if (cb) {
             cb();
@@ -908,7 +934,8 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     if (media.type === "fi" && media.meta.bitrate > 1000) {
         user.socket.emit("queueWarn", {
             msg: "This video has a bitrate over 1000kbps.  Clients with slow " +
-                 "connections may experience lots of buffering."
+                 "connections may experience lots of buffering.",
+            link: data.link
         });
     }
 
@@ -920,7 +947,8 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
         user.socket.emit("queueWarn", {
             msg: "The codec <code>" + media.meta.codec + "</code> is not supported " +
                  "by all browsers, and is not supported by the flash fallback layer.  " +
-                 "This video may not play for some users."
+                 "This video may not play for some users.",
+            link: data.link
         });
     }
 
@@ -1113,55 +1141,6 @@ PlaylistModule.prototype._leadLoop = function() {
     }
 };
 
-PlaylistModule.prototype.refreshGoogleDocs = function (cb) {
-    var self = this;
-
-    if (self.dead || !self.channel || self.channel.dead) {
-        return;
-    }
-
-    var abort = function () {
-        if (self.current) {
-            self.current.media.meta.object = self.current.media.meta.object || null;
-            self.current.media.meta.failed = true;
-        }
-        if (cb) {
-            cb();
-        }
-    };
-
-    if (!this.current || this.current.media.type !== "gd") {
-        return abort();
-    }
-
-    self.channel.activeLock.lock();
-    InfoGetter.getMedia(this.current.media.id, "gd", function (err, media) {
-        if (err) {
-            Logger.errlog.log("Google Docs autorefresh failed: " + err);
-            Logger.errlog.log("ID was: " + self.current.media.id);
-            if (self.current) {
-                self.current.media.meta.object = self.current.media.meta.object || null;
-                self.current.media.meta.failed = true;
-            }
-            if (cb) {
-                cb();
-            }
-            self.channel.activeLock.release();
-        } else {
-            if (!self.current || self.current.media.type !== "gd") {
-                self.channel.activeLock.release();
-                return abort();
-            }
-
-            self.current.media.meta = media.meta;
-            self.current.media.meta.expiration = Date.now() + 3600000;
-            self.channel.logger.log("[playlist] Auto-refreshed Google Doc video");
-            cb && cb();
-            self.channel.activeLock.release();
-        }
-    });
-};
-
 PlaylistModule.prototype._playNext = function () {
     if (!this.current) {
         return;
@@ -1208,7 +1187,16 @@ PlaylistModule.prototype.handleClean = function (user, msg, meta) {
 
     var args = msg.split(" ");
     var cmd = args.shift();
+    if (args.length === 0) {
+        return user.socket.emit("errorMsg", {
+            msg: "No target given for " + cmd + ".  Usage: /clean <username> or " +
+                "/cleantitle <title>"
+        });
+    }
     var target = generateTargetRegex(args.join(" "));
+
+    this.channel.logger.log("[playlist] " + user.getName() + " used " + cmd +
+            " with target regex: " + target);
 
     var cleanfn;
     if (cmd === "/clean") {
@@ -1320,10 +1308,11 @@ PlaylistModule.prototype.handleQueuePlaylist = function (user, data) {
         pos: data.pos
     };
 
-    var self = this;
-    self.channel.activeLock.lock();
+    const self = this;
+    self.channel.refCounter.ref("PlaylistModule::handleQueuePlaylist");
     db.getUserPlaylist(user.getName(), data.name, function (err, pl) {
         if (err) {
+            self.channel.refCounter.unref("PlaylistModule::handleQueuePlaylist");
             return user.socket.emit("errorMsg", {
                 msg: "Playlist load failed: " + err
             });
@@ -1354,7 +1343,6 @@ PlaylistModule.prototype.handleQueuePlaylist = function (user, data) {
                 var m = new Media(item.id, item.title, item.seconds, item.type, item.meta);
                 self._addItem(m, qdata, user);
             });
-            self.channel.activeLock.release();
         } catch (e) {
             Logger.errlog.log("Loading user playlist failed!");
             Logger.errlog.log("PL: " + user.getName() + "-" + data.name);
@@ -1363,9 +1351,22 @@ PlaylistModule.prototype.handleQueuePlaylist = function (user, data) {
                 msg: "Internal error occurred when loading playlist.",
                 link: null
             });
-            self.channel.activeLock.release();
+        } finally {
+            self.channel.refCounter.unref("PlaylistModule::handleQueuePlaylist");
         }
     });
+};
+
+PlaylistModule.prototype.handleRequestPlaylist = function (user) {
+    if (user.reqPlaylistLimiter.throttle(REQ_PLAYLIST_THROTTLE)) {
+        user.socket.emit("errorMsg", {
+            msg: "Get Playlist URLs is limited to 1 usage every 60 seconds.  " +
+                    "Please try again later.",
+            code: "REQ_PLAYLIST_LIMIT_REACHED"
+        });
+    } else {
+        this.sendPlaylist([user]);
+    }
 };
 
 module.exports = PlaylistModule;

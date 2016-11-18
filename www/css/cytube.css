@@ -358,8 +358,8 @@ li.ui-sortable-helper, li.ui-sortable-placeholder + li.queue_entry {
 }
 
 .profile-image {
-    width: 80px;
-    height: 80px;
+    max-width: 80px;
+    max-height: 80px;
     border: 1px solid #aaaaaa;
     border-radius: 5px;
 }
@@ -597,7 +597,7 @@ table td {
     border-top-width: 0;
 }
 
-#emotelist table {
+.emotelist-table {
     margin: auto;
 }
 
@@ -622,7 +622,7 @@ table td {
     cursor: pointer;
 }
 
-#emotelist-paginator-container {
+.emotelist-paginator-container {
     text-align: center;
 }
 
@@ -652,4 +652,35 @@ input#logout[type="submit"] {
 
 input#logout[type="submit"]:hover {
     text-decoration: underline;
+}
+
+#newmessages-indicator {
+    margin-top: -30px;
+    line-height: 30px;
+    height: 30px;
+    text-align: center;
+    width: 100%;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+#newmessages-indicator .glyphicon {
+    margin-left: 10px;
+    margin-right: 10px;
+}
+
+#soundcloud-volume-holder {
+    position: absolute;
+    top: 170px;
+    width: 100%;
+}
+
+#soundcloud-volume-label {
+    margin-left: 2px;
+}
+
+#soundcloud-volume {
+    margin-top: 5px;
+    margin-left: 10px;
+    margin-right: 10px;
 }

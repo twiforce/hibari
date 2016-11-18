@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import express from 'express';
-import { sendJade } from './jade';
+import { sendPug } from './pug';
 import Logger from '../logger';
 import Config from '../config';
 import bodyParser from 'body-parser';
@@ -31,25 +31,14 @@ function initializeLog(app) {
  * Redirects a request to HTTPS if the server supports it
  */
 function redirectHttps(req, res) {
-    if (!req.secure && Config.get('https.enabled') && Config.get('https.redirect')) {
+    if (req.realProtocol !== 'https' && Config.get('https.enabled') &&
+            Config.get('https.redirect')) {
         var ssldomain = Config.get('https.full-address');
         if (ssldomain.indexOf(req.hostname) < 0) {
             return false;
         }
 
         res.redirect(ssldomain + req.path);
-        return true;
-    }
-    return false;
-}
-
-/**
- * Redirects a request to HTTP if the server supports it
- */
-function redirectHttp(req, res) {
-    if (req.secure) {
-        var domain = Config.get('http.full-address');
-        res.redirect(domain + req.path);
         return true;
     }
     return false;
@@ -87,7 +76,7 @@ function handleLegacySocketConfig(req, res) {
 }
 
 function handleUserAgreement(req, res) {
-    sendJade(res, 'tos', {
+    sendPug(res, 'tos', {
         domain: Config.get('http.domain')
     });
 }
@@ -103,7 +92,7 @@ function initializeErrorHandlers(app) {
         if (err) {
             if (err instanceof CSRFError) {
                 res.status(HTTPStatus.FORBIDDEN);
-                return sendJade(res, 'csrferror', {
+                return sendPug(res, 'csrferror', {
                     path: req.path,
                     referer: req.header('referer')
                 });
@@ -115,7 +104,7 @@ function initializeErrorHandlers(app) {
             }
             if (!message) {
                 message = 'An unknown error occurred.';
-            } else if (/\.(jade|js)/.test(message)) {
+            } else if (/\.(pug|js)/.test(message)) {
                 // Prevent leakage of stack traces
                 message = 'An internal error occurred.';
             }
@@ -126,7 +115,7 @@ function initializeErrorHandlers(app) {
             }
 
             res.status(status);
-            return sendJade(res, 'httperror', {
+            return sendPug(res, 'httperror', {
                 path: req.path,
                 status: status,
                 message: message
@@ -157,6 +146,7 @@ module.exports = {
         }
         app.use(cookieParser(webConfig.getCookieSecret()));
         app.use(csrf.init(webConfig.getCookieDomain()));
+        app.use('/r/:channel', require('./middleware/ipsessioncookie').ipSessionCookieMiddleware);
         initializeLog(app);
         require('./middleware/authorize')(app, session);
 
@@ -172,6 +162,13 @@ module.exports = {
             if (!fs.existsSync(cacheDir)) {
                 fs.mkdirSync(cacheDir);
             }
+            app.use((req, res, next) => {
+                if (/\.user\.js/.test(req.url)) {
+                    res._no_minify = true;
+                }
+
+                next();
+            });
             app.use(require('express-minify')({
                 cache: cacheDir
             }));
@@ -179,7 +176,7 @@ module.exports = {
         }
 
         require('./routes/channel')(app, ioConfig);
-        require('./routes/index')(app, channelIndex);
+        require('./routes/index')(app, channelIndex, webConfig.getMaxIndexEntries());
         app.get('/sioconfig(.json)?', handleLegacySocketConfig);
         require('./routes/socketconfig')(app, clusterClient);
         app.get('/useragreement', handleUserAgreement);
@@ -188,6 +185,7 @@ module.exports = {
         require('./account').init(app);
         require('./acp').init(app);
         require('../google2vtt').attach(app);
+        require('./routes/google_drive_userscript')(app);
         app.use(serveStatic(path.join(__dirname, '..', '..', 'www'), {
             maxAge: webConfig.getCacheTTL()
         }));
@@ -195,7 +193,5 @@ module.exports = {
         initializeErrorHandlers(app);
     },
 
-    redirectHttps: redirectHttps,
-
-    redirectHttp: redirectHttp
+    redirectHttps: redirectHttps
 };

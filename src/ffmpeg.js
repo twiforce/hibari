@@ -38,15 +38,49 @@ function initFFLog() {
     fflog.initialized = true;
 }
 
+function fixRedirectIfNeeded(urldata, redirect) {
+    if (!/^https?:/.test(redirect)) {
+        redirect = urldata.protocol + "//" + urldata.host + redirect;
+    }
+
+    return redirect;
+}
+
+function translateStatusCode(statusCode) {
+    switch (statusCode) {
+        case 400:
+            return "The request for the audio/video link was rejected as invalid.  " +
+                "Contact support for troubleshooting assistance.";
+        case 401:
+        case 403:
+            return "Access to the link was denied.  Contact the owner of the " +
+                "website hosting the audio/video file to grant permission for " +
+                "the file to be downloaded.";
+        case 404:
+            return "The requested link could not be found (404).";
+        case 500:
+        case 503:
+            return "The website hosting the audio/video link encountered an error " +
+                "and was unable to process the request.  Try again in a few minutes, " +
+                "and if the issue persists, contact the owner of the website hosting " +
+                "the link.";
+        default:
+            return "An unknown issue occurred when requesting the audio/video link.  " +
+                "Contact support for troubleshooting assistance.";
+    }
+}
+
 function testUrl(url, cb, redirCount) {
     if (!redirCount) redirCount = 0;
     var data = urlparse.parse(url);
     if (!/https?:/.test(data.protocol)) {
-        return cb("Video links must start with http:// or https://");
+        return cb("Only links starting with 'http://' or 'https://' are supported " +
+                  "for raw audio/video support");
     }
 
     if (!data.hostname) {
-        return cb("Invalid link");
+        return cb("The link to the file is missing the website address and can't " +
+                  "be processed.");
     }
 
     var transport = (data.protocol === "https:") ? https : http;
@@ -56,28 +90,34 @@ function testUrl(url, cb, redirCount) {
 
         if (res.statusCode === 301 || res.statusCode === 302) {
             if (redirCount > 2) {
-                return cb("Too many redirects.  Please provide a direct link to the " +
-                          "file");
+                return cb("The request for the audio/video file has been redirected " +
+                          "more than twice.  This could indicate a misconfiguration " +
+                          "on the website hosting the link.  For best results, use " +
+                          "a direct link.  See https://git.io/vrE75 for details.");
             }
-            return testUrl(res.headers["location"], cb, redirCount + 1);
+            return testUrl(fixRedirectIfNeeded(data, res.headers["location"]), cb,
+                    redirCount + 1);
         }
 
         if (res.statusCode !== 200) {
-            var message = res.statusMessage;
-            if (!message) message = "";
-            return cb("HTTP " + res.statusCode + " " + message);
+            return cb(translateStatusCode(res.statusCode));
         }
 
         if (!/^audio|^video/.test(res.headers["content-type"])) {
-            return cb("Server did not return an audio or video file, or sent the " +
-                      "wrong Content-Type");
+            return cb("Expected a content-type starting with 'audio' or 'video', but " +
+                      "got '" + res.headers["content-type"] + "'.  Only direct links " +
+                      "to video and audio files are accepted, and the website hosting " +
+                      "the file must be configured to send the correct MIME type.  " +
+                      "See https://git.io/vrE75 for details.");
         }
 
         cb();
     });
 
     req.on("error", function (err) {
-        cb(err);
+        cb("An unexpected error occurred while trying to process the link.  " +
+           "Try again, and contact support for further troubleshooting if the " +
+           "problem continues." + (!!err.code ? (" Error code: " + err.code) : ""));
     });
 
     req.end();
@@ -113,6 +153,20 @@ function readOldFormat(buf) {
     return data;
 }
 
+function isAlternateDisposition(stream) {
+    if (!stream.disposition) {
+        return false;
+    }
+
+    for (var key in stream) {
+        if (key !== "default" && stream.disposition[key]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function reformatData(data) {
     var reformatted = {};
 
@@ -127,24 +181,54 @@ function reformatData(data) {
     reformatted.title = data.format.tags ? data.format.tags.title : null;
     var container = data.format.format_name.split(",")[0];
 
-    data.streams.forEach(function (stream) {
-        if (stream.codec_type === "video" &&
-                acceptedCodecs.hasOwnProperty(container + "/" + stream.codec_name)) {
-            reformatted.vcodec = stream.codec_name;
-            if (!reformatted.title && stream.tags) {
-                reformatted.title = stream.tags.title;
-            }
-        } else if (stream.codec_type === "audio") {
-            reformatted.acodec = stream.codec_name;
-        }
-    });
+    var isVideo = false;
+    var audio = null;
+    for (var i = 0; i < data.streams.length; i++) {
+        const stream = data.streams[i];
 
-    if (reformatted.vcodec && !(audioOnlyContainers.hasOwnProperty(container))) {
-        reformatted.type = [container, reformatted.vcodec].join("/");
-        reformatted.medium = "video";
-    } else if (reformatted.acodec) {
-        reformatted.type = [container, reformatted.acodec].join("/");
-        reformatted.medium = "audio";
+        // Trash streams with alternate dispositions, e.g. `attached_pic` for
+        // embedded album art on MP3s (not a real video stream)
+        if (isAlternateDisposition(stream)) {
+            continue;
+        }
+
+        if (stream.codec_type === "video" &&
+                !audioOnlyContainers.hasOwnProperty(container)) {
+            isVideo = true;
+            if (acceptedCodecs.hasOwnProperty(container + "/" + stream.codec_name)) {
+                reformatted.vcodec = stream.codec_name;
+                reformatted.medium = "video";
+                reformatted.type = [container, reformatted.vcodec].join("/");
+
+                if (stream.tags && stream.tags.title) {
+                    reformatted.title = stream.tags.title;
+                }
+
+                return reformatted;
+            }
+        } else if (stream.codec_type === "audio" && !audio &&
+                acceptedAudioCodecs.hasOwnProperty(stream.codec_name)) {
+            audio = {
+                acodec: stream.codec_name,
+                medium: "audio"
+            };
+
+            if (stream.tags && stream.tags.title) {
+                audio.title = stream.tags.title;
+            }
+        }
+    }
+
+    // Override to make sure video files with no valid video streams but some
+    // acceptable audio stream are rejected.
+    if (isVideo) {
+        return reformatted;
+    }
+
+    if (audio) {
+        for (var key in audio) {
+            reformatted[key] = audio[key];
+        }
     }
 
     return reformatted;
@@ -162,7 +246,9 @@ exports.ffprobe = function ffprobe(filename, cb) {
         Logger.errlog.log("Possible runaway ffprobe process for file " + filename);
         fflog("Killing ffprobe for " + filename + " after " + (TIMEOUT/1000) + " seconds");
         childErr = new Error("File query exceeded time limit of " + (TIMEOUT/1000) +
-                             " seconds");
+                             " seconds.  To avoid this issue, encode your videos " +
+                             "using the 'faststart' option: " +
+                             "https://trac.ffmpeg.org/wiki/Encode/H.264#faststartforwebvideo");
         child.kill("SIGKILL");
     }, TIMEOUT);
 
@@ -178,7 +264,9 @@ exports.ffprobe = function ffprobe(filename, cb) {
         stderr += data;
         if (stderr.match(/the tls connection was non-properly terminated/i)) {
             fflog("Killing ffprobe for " + filename + " due to TLS error");
-            childErr = new Error("Remote server closed connection unexpectedly");
+            childErr = new Error("The connection was closed unexpectedly.  " +
+                                 "If the problem continues, contact support " +
+                                 "for troubleshooting assistance.");
             child.kill("SIGKILL");
         }
     });
@@ -228,7 +316,7 @@ exports.query = function (filename, cb) {
 
     if (!filename.match(/^https?:\/\//)) {
         return cb("Raw file playback is only supported for links accessible via HTTP " +
-                  "or HTTPS");
+                  "or HTTPS.  Ensure that the link begins with 'http://' or 'https://'");
     }
 
     testUrl(filename, function (err) {
@@ -246,10 +334,11 @@ exports.query = function (filename, cb) {
                 } else if (err.message) {
                     if (err.message.match(/protocol not found/i))
                         return cb("Link uses a protocol unsupported by this server's " +
-                                  "version of ffmpeg");
+                                  "version of ffmpeg.  Some older versions of " +
+                                  "ffprobe/avprobe do not support HTTPS.");
 
                     if (err.message.match(/exceeded time limit/) ||
-                        err.message.match(/remote server closed/i)) {
+                        err.message.match(/closed unexpectedly/i)) {
                         return cb(err.message);
                     }
 
@@ -257,11 +346,15 @@ exports.query = function (filename, cb) {
                     // indicate a problem with the remote file, not with this code.
                     if (!/(av|ff)probe/.test(String(err)))
                         Logger.errlog.log(err.stack || err);
-                    return cb("Unable to query file data with ffmpeg");
+                    return cb("An unexpected error occurred while trying to process " +
+                              "the link.  Contact support for troubleshooting " +
+                              "assistance.");
                 } else {
                     if (!/(av|ff)probe/.test(String(err)))
                         Logger.errlog.log(err.stack || err);
-                    return cb("Unable to query file data with ffmpeg");
+                    return cb("An unexpected error occurred while trying to process " +
+                              "the link.  Contact support for troubleshooting " +
+                              "assistance.");
                 }
             }
 
@@ -269,14 +362,12 @@ exports.query = function (filename, cb) {
                 data = reformatData(data);
             } catch (e) {
                 Logger.errlog.log(e.stack || e);
-                return cb("Unable to query file data with ffmpeg");
+                return cb("An unexpected error occurred while trying to process " +
+                          "the link.  Contact support for troubleshooting " +
+                          "assistance.");
             }
 
             if (data.medium === "video") {
-                if (!acceptedCodecs.hasOwnProperty(data.type)) {
-                    return cb("Unsupported video codec " + data.type);
-                }
-
                 data = {
                     title: data.title || "Raw Video",
                     duration: data.duration,
@@ -286,10 +377,6 @@ exports.query = function (filename, cb) {
 
                 cb(null, data);
             } else if (data.medium === "audio") {
-                if (!acceptedAudioCodecs.hasOwnProperty(data.acodec)) {
-                    return cb("Unsupported audio codec " + data.acodec);
-                }
-
                 data = {
                     title: data.title || "Raw Audio",
                     duration: data.duration,
@@ -299,9 +386,8 @@ exports.query = function (filename, cb) {
 
                 cb(null, data);
             } else {
-                return cb("Parsed metadata did not contain a valid video or audio " +
-                          "stream.  Either the file is invalid or it has a format " +
-                          "unsupported by this server's version of ffmpeg.");
+                return cb("File did not contain an acceptable codec.  See " +
+                          "https://git.io/vrE75 for details.");
             }
         });
     });

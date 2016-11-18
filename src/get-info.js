@@ -9,6 +9,11 @@ var Config = require("./config");
 var ffmpeg = require("./ffmpeg");
 var mediaquery = require("cytube-mediaquery");
 var YouTube = require("cytube-mediaquery/lib/provider/youtube");
+var Vimeo = require("cytube-mediaquery/lib/provider/vimeo");
+var Vidme = require("cytube-mediaquery/lib/provider/vidme");
+var Streamable = require("cytube-mediaquery/lib/provider/streamable");
+var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
+var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
 
 /*
  * Preference map of quality => youtube formats.
@@ -158,50 +163,11 @@ var Getters = {
             return Getters.vi_oauth(id, callback);
         }
 
-        var options = {
-            host: "vimeo.com",
-            port: 443,
-            path: "/api/v2/video/" + id + ".json",
-            method: "GET",
-            dataType: "jsonp",
-            timeout: 1000
-        };
-
-        urlRetrieve(https, options, function (status, data) {
-            switch (status) {
-                case 200:
-                    break; /* Request is OK, skip to handling data */
-                case 400:
-                    return callback("Invalid request", null);
-                case 403:
-                    return callback("Private video", null);
-                case 404:
-                    return callback("Video not found", null);
-                case 500:
-                case 503:
-                    return callback("Service unavailable", null);
-                default:
-                    return callback("HTTP " + status, null);
-            }
-
-            try {
-                data = JSON.parse(data);
-                data = data[0];
-                var seconds = data.duration;
-                var title = data.title;
-                var media = new Media(id, title, seconds, "vi");
-                callback(false, media);
-            } catch(e) {
-                var err = e;
-                /**
-                 * This should no longer be necessary as the outer handler
-                 * checks for HTTP 404
-                 */
-                if (buffer.match(/not found/))
-                    err = "Video not found";
-
-                callback(err, null);
-            }
+        Vimeo.lookup(id).then(video => {
+            video = new Media(video.id, video.title, video.duration, "vi");
+            callback(null, video);
+        }).catch(error => {
+            callback(error.message);
         });
     },
 
@@ -430,6 +396,25 @@ var Getters = {
         callback(false, media);
     },
 
+    /* twitch VOD */
+    tv: function (id, callback) {
+        var m = id.match(/([cv]\d+)/);
+        if (m) {
+            id = m[1];
+        } else {
+            process.nextTick(callback, "Invalid Twitch VOD ID");
+            return;
+        }
+
+        TwitchVOD.lookup(id).then(video => {
+            const media = new Media(video.id, video.title, video.duration,
+                                    "tv", video.meta);
+            process.nextTick(callback, false, media);
+        }).catch(function (err) {
+            callback(err.message || err, null);
+        });
+    },
+
     /* ustream.tv */
     us: function (id, callback) {
         /**
@@ -494,6 +479,13 @@ var Getters = {
         callback(false, media);
     },
 
+    /* HLS stream */
+    hl: function (id, callback) {
+        var title = "Livestream";
+        var media = new Media(id, title, "--:--", "hl");
+        callback(false, media);
+    },
+
     /* imgur.com albums */
     im: function (id, callback) {
         /**
@@ -529,6 +521,7 @@ var Getters = {
 
     /* google docs */
     gd: function (id, callback) {
+        GoogleDrive.setHTML5HackEnabled(Config.get("google-drive.html5-hack-enabled"));
         var data = {
             type: "googledrive",
             kind: "single",
@@ -585,6 +578,38 @@ var Getters = {
         var media = new Media(id, title, "--:--", "hb");
         callback(false, media);
     },
+
+    /* vid.me */
+    vm: function (id, callback) {
+        if (!/^[\w-]+$/.test(id)) {
+            process.nextTick(callback, "Invalid vid.me ID");
+            return;
+        }
+
+        Vidme.lookup(id).then(video => {
+            const media = new Media(video.id, video.title, video.duration,
+                                    "vm", video.meta);
+            process.nextTick(callback, false, media);
+        }).catch(function (err) {
+            callback(err.message || err, null);
+        });
+    },
+
+    /* streamable */
+    sb: function (id, callback) {
+        if (!/^[\w-]+$/.test(id)) {
+            process.nextTick(callback, "Invalid streamable.com ID");
+            return;
+        }
+
+        Streamable.lookup(id).then(video => {
+            const media = new Media(video.id, video.title, video.duration,
+                                    "sb", video.meta);
+            process.nextTick(callback, false, media);
+        }).catch(function (err) {
+            callback(err.message || err, null);
+        });
+    }
 };
 
 module.exports = {

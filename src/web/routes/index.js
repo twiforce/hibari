@@ -1,6 +1,6 @@
-import { sendJade } from '../jade';
+import { sendPug } from '../pug';
 
-export default function initialize(app, channelIndex) {
+export default function initialize(app, channelIndex, maxEntries) {
     app.get('/', (req, res) => {
         channelIndex.listPublicChannels().then((channels) => {
             channels.sort((a, b) => {
@@ -11,7 +11,9 @@ export default function initialize(app, channelIndex) {
                 return b.usercount - a.usercount;
             });
 
-            sendJade(res, 'index', {
+            channels = channels.slice(0, maxEntries);
+
+            sendPug(res, 'index', {
                 channels: channels
             });
         });

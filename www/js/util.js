@@ -1,4 +1,4 @@
-function makeAlert(title, text, klass) {
+function makeAlert(title, text, klass, textOnly) {
     if(!klass) {
         klass = "alert-info";
     }
@@ -7,8 +7,9 @@ function makeAlert(title, text, klass) {
 
     var al = $("<div/>").addClass("alert")
         .addClass(klass)
-        .html(text)
         .appendTo(wrap);
+    textOnly ? al.text(text) : al.html(text) ;
+
     $("<br/>").prependTo(al);
     $("<strong/>").text(title).prependTo(al);
     $("<button/>").addClass("close pull-right").html("&times;")
@@ -29,6 +30,8 @@ function formatURL(data) {
             return "http://vimeo.com/" + data.id;
         case "dm":
             return "http://dailymotion.com/video/" + data.id;
+        case "vm":
+            return "https://vid.me/" + data.id;
         case "sc":
             return data.id;
         case "li":
@@ -51,6 +54,10 @@ function formatURL(data) {
             return data.id;
         case "hb":
             return "http://hitbox.tv/" + data.id;
+        case "hl":
+            return data.id;
+        case "sb":
+            return "https://streamable.com/" + data.id;
         default:
             return "#";
     }
@@ -639,9 +646,9 @@ function showUserOptions() {
     $("#us-ping-sound").val(USEROPTS.boop);
     $("#us-sendbtn").prop("checked", USEROPTS.chatbtn);
     $("#us-no-emotes").prop("checked", USEROPTS.no_emotes);
+    $("#us-strip-image").prop("checked", USEROPTS.strip_image);
 
     $("#us-modflair").prop("checked", USEROPTS.modhat);
-    $("#us-joinmessage").prop("checked", USEROPTS.joinmessage);
     $("#us-shadowchat").prop("checked", USEROPTS.show_shadowchat);
 
     formatScriptAccessPrefs();
@@ -673,10 +680,10 @@ function saveUserOptions() {
     USEROPTS.boop                 = $("#us-ping-sound").val();
     USEROPTS.chatbtn              = $("#us-sendbtn").prop("checked");
     USEROPTS.no_emotes            = $("#us-no-emotes").prop("checked");
+    USEROPTS.strip_image          = $("#us-strip-image").prop("checked");
 
     if (CLIENT.rank >= 2) {
         USEROPTS.modhat      = $("#us-modflair").prop("checked");
-        USEROPTS.joinmessage = $("#us-joinmessage").prop("checked");
         USEROPTS.show_shadowchat = $("#us-shadowchat").prop("checked");
     }
 
@@ -695,7 +702,7 @@ function applyOpts() {
         var old = $("#usertheme").attr("id", "usertheme_old");
         var theme = USEROPTS.theme;
         if (theme === "default") {
-            theme = "/css/themes/slate.css";
+            theme = DEFAULT_THEME;
         }
         $("<link/>").attr("rel", "stylesheet")
             .attr("type", "text/css")
@@ -753,6 +760,22 @@ function applyOpts() {
     }
 }
 
+function parseTimeout(t) {
+    var m;
+    if (m = t.match(/^(\d+):(\d+):(\d+)$/)) {
+        // HH:MM:SS
+        return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+    } else if (m = t.match(/^(\d+):(\d+)$/)) {
+        // MM:SS
+        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    } else if (m = t.match(/^(\d+)$/)) {
+        // Seconds
+        return parseInt(m[1], 10);
+    } else {
+        throw new Error("Invalid timeout value '" + t + "'");
+    }
+}
+
 function showPollMenu() {
     $("#pollwrap .poll-menu").remove();
     var menu = $("<div/>").addClass("well poll-menu")
@@ -771,13 +794,21 @@ function showPollMenu() {
         .attr("type", "text")
         .appendTo(menu);
 
-    $("<strong/>").text("Таймаут, сек (необязательно)").appendTo(menu);
+    $("<strong/>").text("Timeout (optional)").appendTo(menu);
+    $("<p/>").text("If you specify a timeout, the poll will automatically " +
+                   "be closed after that amount of time.  You can either " +
+                   "specify the number of seconds or use the format " +
+                   "minutes:seconds.  Examples: 90 (90 seconds), 5:30 " +
+                   "(5 minutes, 30 seconds)")
+        .addClass("text-muted")
+        .appendTo(menu);
     var timeout = $("<input/>").addClass("form-control")
         .attr("type", "text")
         .appendTo(menu);
+    var timeoutError = null;
 
     var checkboxOuter = $("<div/>").addClass("checkbox").appendTo(menu);
-    var lbl = $("<label/>").text("Скрыть результаты")
+    var lbl = $("<label/>").text("Скрыть результаты до окончания голосования")
         .appendTo(checkboxOuter);
     var hidden = $("<input/>").attr("type", "checkbox")
         .prependTo(lbl);
@@ -803,6 +834,23 @@ function showPollMenu() {
         .text("Начать опрос")
         .appendTo(menu)
         .click(function() {
+            var t = timeout.val().trim();
+            if (t) {
+                try {
+                    t = parseTimeout(t);
+                } catch (e) {
+                    if (timeoutError) {
+                        timeoutError.remove();
+                    }
+
+                    timeoutError = $("<p/>").addClass("text-danger").text(e.message);
+                    timeoutError.insertAfter(timeout);
+                    timeout.focus();
+                    return;
+                }
+            } else {
+                t = undefined;
+            }
             var opts = [];
             menu.find(".poll-menu-option").each(function() {
                 if($(this).val() != "")
@@ -812,14 +860,20 @@ function showPollMenu() {
                 title: title.val(),
                 opts: opts,
                 obscured: hidden.prop("checked"),
-                timeout: timeout.val() ? parseInt(timeout.val()) : undefined
+                timeout: t
             });
             menu.remove();
         });
 }
 
 function scrollChat() {
-    $("#messagebuffer").scrollTop($("#messagebuffer").prop("scrollHeight"));
+    scrollAndIgnoreEvent($("#messagebuffer").prop("scrollHeight"));
+    $("#newmessages-indicator").remove();
+}
+
+function scrollAndIgnoreEvent(top) {
+    IGNORE_SCROLL_EVENT = true;
+    $("#messagebuffer").scrollTop(top);
 }
 
 function hasPermission(key) {
@@ -882,6 +936,8 @@ function handleModPermissions() {
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
+    $("#cs-new_user_chat_delay").val(formatTime(CHANNEL.opts.new_user_chat_delay || 0));
+    $("#cs-new_user_chat_link_delay").val(formatTime(CHANNEL.opts.new_user_chat_link_delay || 0));
     (function() {
         if(typeof CHANNEL.opts.maxlength != "number") {
             $("#cs-maxlength").val("");
@@ -923,7 +979,6 @@ function handlePermissionChange() {
     setVisible("#showchansettings", CLIENT.rank >= 2);
     setVisible("#playlistmanagerwrap", CLIENT.rank >= 1);
     setVisible("#modflair", CLIENT.rank >= 2);
-    setVisible("#adminflair", CLIENT.rank >= 255);
     setVisible("#guestlogin", CLIENT.rank < 0);
     setVisible("#chatline", CLIENT.rank >= 0);
     setVisible("#queue", hasPermission("seeplaylist"));
@@ -934,8 +989,8 @@ function handlePermissionChange() {
     setVisible("#showmediaurl", hasPermission("playlistadd"));
     setVisible("#showcustomembed", hasPermission("playlistaddcustom"));
     $("#queue_next").attr("disabled", !hasPermission("playlistnext"));
-	
-	
+
+
 	// Seriously, wtf is this
     /*if(hasPermission("playlistadd") ||
         hasPermission("playlistmove") ||
@@ -1245,7 +1300,14 @@ function parseMediaLink(url) {
         };
     }
 
-    if((m = url.match(/twitch\.tv\/([^\?&#]+)/))) {
+    if((m = url.match(/twitch\.tv\/(?:.*?)\/([cv])\/(\d+)/))) {
+        return {
+            id: m[1] + m[2],
+            type: "tv"
+        };
+    }
+
+    if((m = url.match(/twitch\.tv\/([\w-]+)/))) {
         return {
             id: m[1],
             type: "tw"
@@ -1323,6 +1385,27 @@ function parseMediaLink(url) {
         };
     }
 
+    if((m = url.match(/vid\.me\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "vm"
+        };
+    }
+
+    if ((m = url.match(/(.*\.m3u8)/))) {
+        return {
+            id: m[1],
+            type: "hl"
+        };
+    }
+
+    if((m = url.match(/streamable\.com\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "sb"
+        };
+    }
+
     /*  Shorthand URIs  */
     // To catch Google Plus by ID alone
     if ((m = url.match(/^(?:gp:)?(\d{21}_\d{19}_\d{19})/))) {
@@ -1336,6 +1419,13 @@ function parseMediaLink(url) {
         return {
             id: m[1],
             type: "dm"
+        };
+    }
+    // Raw files need to keep the query string
+    if ((m = url.match(/^fi:(.*)/))) {
+        return {
+            id: m[1],
+            type: "fi"
         };
     }
     // Generic for the rest.
@@ -1386,6 +1476,16 @@ function sendVideoUpdate() {
 
 /* chat */
 
+function stripImages(msg){
+    if (!USEROPTS.strip_image) {
+        return msg;
+    }
+    return msg.replace(IMAGE_MATCH, function(match,img){
+        return CHANNEL.opts.enable_link_regex ?
+            '<a target="_blank" href="'+img+'">'+img+'</a>' : img;
+    });
+}
+
 function formatChatMessage(data, last) {
     // Backwards compat
     if (!data.meta || data.msgclass) {
@@ -1405,6 +1505,7 @@ function formatChatMessage(data, last) {
     if (data.meta.forceShowName)
         skip = false;
 
+    data.msg = stripImages(data.msg);
     data.msg = execEmotes(data.msg);
 
     last.name = data.username;
@@ -1462,12 +1563,6 @@ function formatChatMessage(data, last) {
     if (data.meta.shadow) {
         div.addClass("chat-shadow");
     }
-
-    div.find("img").load(function () {
-        if (SCROLLCHAT) {
-            scrollChat();
-        }
-    });
     return div;
 }
 
@@ -1478,22 +1573,56 @@ function addChatMessage(data) {
     if (data.meta.shadow && !USEROPTS.show_shadowchat) {
         return;
     }
+    var msgBuf = $("#messagebuffer");
     var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
     // a message, it highlights messages from that user
-
     var safeUsername = data.username.replace(/[^\wа-яА-Я-]/g, '\\$');
     div.addClass("chat-msg-" + safeUsername);
-    div.appendTo($("#messagebuffer"));
+    div.appendTo(msgBuf);
     div.mouseover(function() {
         $(".chat-msg-" + safeUsername).addClass("nick-hover");
     });
     div.mouseleave(function() {
         $(".nick-hover").removeClass("nick-hover");
     });
-    trimChatBuffer();
-    if(SCROLLCHAT)
+    var oldHeight = msgBuf.prop("scrollHeight");
+    var numRemoved = trimChatBuffer();
+    if (SCROLLCHAT) {
         scrollChat();
+    } else {
+        var newMessageDiv = $("#newmessages-indicator");
+        if (!newMessageDiv.length) {
+            newMessageDiv = $("<div/>").attr("id", "newmessages-indicator")
+                    .insertBefore($("#chatline"));
+            var bgHack = $("<span/>").attr("id", "newmessages-indicator-bghack")
+                    .appendTo(newMessageDiv);
+
+            $("<span/>").addClass("glyphicon glyphicon-chevron-down")
+                    .appendTo(bgHack);
+            $("<span/>").text("Новые сообщения").appendTo(bgHack);
+            $("<span/>").addClass("glyphicon glyphicon-chevron-down")
+                    .appendTo(bgHack);
+            newMessageDiv.click(function () {
+                SCROLLCHAT = true;
+                scrollChat();
+            });
+        }
+
+        if (numRemoved > 0) {
+            IGNORE_SCROLL_EVENT = true;
+            var diff = oldHeight - msgBuf.prop("scrollHeight");
+            scrollAndIgnoreEvent(msgBuf.scrollTop() - diff);
+        }
+    }
+
+    div.find("img").load(function () {
+        if (SCROLLCHAT) {
+            scrollChat();
+        } else if ($(this).position().top < 0) {
+            scrollAndIgnoreEvent(msgBuf.scrollTop() + $(this).height());
+        }
+    });
 
     var isHighlight = false;
     if (CLIENT.name && data.username != CLIENT.name) {
@@ -1517,6 +1646,8 @@ function trimChatBuffer() {
     for (var i = 0; i < count; i++) {
         buffer.firstChild.remove();
     }
+
+    return count;
 }
 
 function pingMessage(isHighlight) {
@@ -1540,6 +1671,39 @@ function pingMessage(isHighlight) {
 
 /* layouts */
 
+function undoHDLayout() {
+    $("body").removeClass("hd");
+    $("#drinkbar").detach().removeClass().addClass("col-lg-12 col-md-12")
+      .appendTo("#drinkbarwrap");
+    $("#chatwrap").detach().removeClass().addClass("col-lg-5 col-md-5")
+      .appendTo("#main");
+    $("#videowrap").detach().removeClass().addClass("col-lg-7 col-md-7")
+      .appendTo("#main");
+
+    $("#leftcontrols").detach().removeClass().addClass("col-lg-5 col-md-5")
+      .prependTo("#controlsrow");
+
+    $("#plcontrol").detach().appendTo("#rightcontrols");
+    $("#videocontrols").detach().appendTo("#rightcontrols");
+
+    $("#playlistrow").prepend('<div id="leftpane" class="col-lg-5 col-md-5" />');
+    $("#leftpane").append('<div id="leftpane-inner" class="row" />');
+
+    $("#pollwrap").detach().removeClass().addClass("col-lg-12 col-md-12")
+      .appendTo("#leftpane-inner");
+    $("#playlistmanagerwrap").detach().removeClass().addClass("col-lg-12 col-md-12")
+      .css("margin-top", "10px")
+      .appendTo("#leftpane-inner");
+
+    $("#rightpane").detach().removeClass().addClass("col-lg-7 col-md-7")
+      .appendTo("#playlistrow");
+
+    $("nav").addClass("navbar-fixed-top");
+    $("#mainpage").css("padding-top", "60px");
+    $("#queue").css("max-height", "500px");
+    $("#messagebuffer, #userlist").css("max-height", "");
+}
+
 function compactLayout() {
     /* Undo synchtube layout */
     if ($("body").hasClass("synchtube")) {
@@ -1562,36 +1726,7 @@ function compactLayout() {
 
     /* Undo HD layout */
     if ($("body").hasClass("hd")) {
-        $("body").removeClass("hd");
-        $("#drinkbar").detach().removeClass().addClass("col-lg-12 col-md-12")
-          .appendTo("#drinkbarwrap");
-        $("#chatwrap").detach().removeClass().addClass("col-lg-5 col-md-5")
-          .appendTo("#main");
-        $("#videowrap").detach().removeClass().addClass("col-lg-7 col-md-7")
-          .appendTo("#main");
-
-        $("#leftcontrols").detach().removeClass().addClass("col-lg-5 col-md-5")
-          .prependTo("#controlsrow");
-
-        $("#plcontrol").detach().appendTo("#rightcontrols");
-        $("#videocontrols").detach().appendTo("#rightcontrols");
-
-        $("#playlistrow").prepend('<div id="leftpane" class="col-lg-5 col-md-5" />');
-        $("#leftpane").append('<div id="leftpane-inner" class="row" />');
-
-        $("#pollwrap").detach().removeClass().addClass("col-lg-12 col-md-12")
-          .appendTo("#leftpane-inner");
-        $("#playlistmanagerwrap").detach().removeClass().addClass("col-lg-12 col-md-12")
-          .css("margin-top", "10px")
-          .appendTo("#leftpane-inner");
-
-        $("#rightpane").detach().removeClass().addClass("col-lg-7 col-md-7")
-          .appendTo("#playlistrow");
-
-        $("nav").addClass("navbar-fixed-top");
-        $("#mainpage").css("padding-top", "60px");
-        $("#queue").css("max-height", "500px");
-        $("#messagebuffer, #userlist").css("max-height", "");
+        undoHDLayout();
     }
 
     $("body").addClass("compact");
@@ -1599,6 +1734,9 @@ function compactLayout() {
 }
 
 function fluidLayout() {
+    if ($("body").hasClass("hd")) {
+        undoHDLayout();
+    }
     $(".container").removeClass("container").addClass("container-fluid");
     $("footer .container-fluid").removeClass("container-fluid").addClass("container");
     $("body").addClass("fluid");
@@ -1606,6 +1744,9 @@ function fluidLayout() {
 }
 
 function synchtubeLayout() {
+    if ($("body").hasClass("hd")) {
+        undoHDLayout();
+    }
     if($("#userlisttoggle").hasClass("glyphicon-chevron-right")){
         $("#userlisttoggle").removeClass("glyphicon-chevron-right").addClass("glyphicon-chevron-left")
     }
@@ -1617,6 +1758,9 @@ function synchtubeLayout() {
     $("body").addClass("synchtube");
 }
 
+/*
+ * "HD" is kind of a misnomer.  Should be renamed at some point.
+ */
 function hdLayout() {
     var videowrap = $("#videowrap"),
         chatwrap = $("#chatwrap"),
@@ -1872,7 +2016,6 @@ function genPermissionsEditor() {
     makeOption("Импортировать смайлики", "emoteimport", modplus, CHANNEL.perms.emoteimport+"");
 
     addDivider("Разное");
-
     makeOption("Drink calls", "drink", modleader, CHANNEL.perms.drink+"");
     makeOption("Чат", "chat", noanon, CHANNEL.perms.chat+"");
     makeOption("Очистить чат", "chatclear", modleader, CHANNEL.perms.chatclear+"");
@@ -1984,9 +2127,7 @@ function queueMessage(data, type) {
     var alerts = $(".qfalert.qf-" + type + " .alert");
     for (var i = 0; i < alerts.length; i++) {
         var al = $(alerts[i]);
-        var cl = al.clone();
-        cl.children().remove();
-        if (cl.text() === data.msg) {
+        if (al.data("reason") === data.msg) {
             var tag = al.find("." + ltype);
             if (tag.length > 0) {
                 var morelinks = al.find(".qflinks");
@@ -2019,25 +2160,18 @@ function queueMessage(data, type) {
         }
     }
     var text = data.msg;
+    text = text.replace(/(https?:[^ ]+)/g, "<a href='$1' target='_blank'>$1</a>");
     if (typeof data.link === "string") {
         text += "<br><a href='" + data.link + "' target='_blank'>" +
                 data.link + "</a>";
     }
-    makeAlert(title, text, type)
+    var newAlert = makeAlert(title, text, type)
         .addClass("linewrap qfalert qf-" + type)
-        .appendTo($("#queuefail"));
+        .prependTo($("#queuefail"));
+    newAlert.find(".alert").data("reason", data.msg);
 }
 
 function setupChanlogFilter(data) {
-    var getKey = function (ln) {
-        var left = ln.indexOf("[", 1);
-        var right = ln.indexOf("]", left);
-        if (left === -1 || right === -1) {
-            return "unknown";
-        }
-        return ln.substring(left+1, right);
-    };
-
     data = data.split("\n").filter(function (ln) {
         return ln.indexOf("[") === 0 && ln.indexOf("]") > 0;
     });
@@ -2049,7 +2183,10 @@ function setupChanlogFilter(data) {
 
     var keys = {};
     data.forEach(function (ln) {
-        keys[getKey(ln)] = true;
+        var m = ln.match(/^\[.*?\] \[(\w+?)\].*$/);
+        if (m) {
+            keys[m[1]] = true;
+        }
     });
 
     Object.keys(keys).forEach(function (key) {
@@ -2394,58 +2531,6 @@ function formatCSChatFilterList() {
     });
 }
 
-function formatCSEmoteList() {
-    var tbl = $("#cs-emotes table");
-    tbl.find("tbody").remove();
-    var entries = CHANNEL.emotes || [];
-    entries.forEach(function (f) {
-        var tr = $("<tr/>").appendTo(tbl);
-        var del = $("<button/>").addClass("btn btn-xs btn-danger")
-            .appendTo($("<td/>").appendTo(tr));
-        $("<span/>").addClass("glyphicon glyphicon-trash").appendTo(del);
-        del.click(function () {
-            socket.emit("removeEmote", f);
-        });
-        var name = $("<code/>").text(f.name).addClass("linewrap")
-            .appendTo($("<td/>").appendTo(tr));
-        var image = $("<code/>").text(f.image).addClass("linewrap")
-            .appendTo($("<td/>").appendTo(tr));
-        image.popover({
-            html: true,
-            trigger: "hover",
-            content: '<img src="' + f.image + '" class="channel-emote">'
-        });
-
-        image.click(function () {
-            var td = image.parent();
-            td.find(".popover").remove();
-            image.detach();
-            var edit = $("<input/>").addClass("form-control").attr("type", "text")
-                .appendTo(td);
-
-            edit.val(f.image);
-            edit.focus();
-
-            var finish = function () {
-                var val = edit.val();
-                edit.remove();
-                image.appendTo(td);
-                socket.emit("updateEmote", {
-                    name: f.name,
-                    image: val
-                });
-            };
-
-            edit.blur(finish);
-            edit.keydown(function (ev) {
-                if (ev.keyCode === 13) {
-                    finish();
-                }
-            });
-        });
-    });
-}
-
 function formatTime(sec) {
     var h = Math.floor(sec / 3600) + "";
     var m = Math.floor((sec % 3600) / 60) + "";
@@ -2534,8 +2619,12 @@ function formatUserPlaylistList() {
 function loadEmotes(data) {
     CHANNEL.emotes = [];
     data.forEach(function (e) {
-        e.regex = new RegExp(e.source, "gi");
-        CHANNEL.emotes.push(e);
+        if (e.image && e.name) {
+            e.regex = new RegExp(e.source, "gi");
+            CHANNEL.emotes.push(e);
+        } else {
+            console.error("Rejecting invalid emote: " + JSON.stringify(e));
+        }
     });
 }
 
@@ -2851,20 +2940,52 @@ function googlePlusSimulator2014(data) {
     return data;
 }
 
-function EmoteList() {
-    this.modal = $("#emotelist");
-    this.modal.on("hidden.bs.modal", unhidePlayer);
-    this.table = document.querySelector("#emotelist table");
+function EmoteList(selector, emoteClickCallback) {
+    this.elem = $(selector);
+    this.initSearch();
+    this.initSortOption();
+    this.table = this.elem.find(".emotelist-table")[0];
+    this.paginatorContainer = this.elem.find(".emotelist-paginator-container");
     this.cols = 5;
     this.itemsPerPage = 25;
     this.emotes = [];
-    this.emoteListChanged = true;
     this.page = 0;
+    this.emoteClickCallback = emoteClickCallback || function(){};
 }
+
+EmoteList.prototype.initSearch = function () {
+    this.searchbar = this.elem.find(".emotelist-search");
+    var self = this;
+
+    this.searchbar.keyup(function () {
+        var value = this.value.toLowerCase();
+        if (value) {
+            self.filter = function (emote) {
+                return emote.name.toLowerCase().indexOf(value) >= 0;
+            };
+        } else {
+            self.filter = null;
+        }
+        self.handleChange();
+        self.loadPage(0);
+    });
+};
+
+EmoteList.prototype.initSortOption = function () {
+    this.sortOption = this.elem.find(".emotelist-alphabetical");
+    this.sortAlphabetical = false;
+    var self = this;
+
+    this.sortOption.change(function () {
+        self.sortAlphabetical = this.checked;
+        self.handleChange();
+        self.loadPage(0);
+    });
+};
 
 EmoteList.prototype.handleChange = function () {
     this.emotes = CHANNEL.emotes.slice();
-    if (USEROPTS.emotelist_sort) {
+    if (this.sortAlphabetical) {
         this.emotes.sort(function (a, b) {
             var x = a.name.toLowerCase();
             var y = b.name.toLowerCase();
@@ -2885,19 +3006,9 @@ EmoteList.prototype.handleChange = function () {
 
     this.paginator = new NewPaginator(this.emotes.length, this.itemsPerPage,
             this.loadPage.bind(this));
-    var container = document.getElementById("emotelist-paginator-container");
-    container.innerHTML = "";
-    container.appendChild(this.paginator.elem);
+    this.paginatorContainer.html("");
+    this.paginatorContainer.append(this.paginator.elem);
     this.paginator.loadPage(this.page);
-    this.emoteListChanged = false;
-};
-
-EmoteList.prototype.show = function () {
-    if (this.emoteListChanged) {
-        this.handleChange();
-    }
-
-    this.modal.modal();
 };
 
 EmoteList.prototype.loadPage = function (page) {
@@ -2929,20 +3040,7 @@ EmoteList.prototype.loadPage = function (page) {
             img.src = emote.image;
             img.className = "emote-preview";
             img.title = emote.name;
-            img.onclick = function () {
-                var val = chatline.value;
-                if (!val) {
-                    chatline.value = emote.name;
-                } else {
-                    if (!val.charAt(val.length - 1).match(/\s/)) {
-                        chatline.value += " ";
-                    }
-                    chatline.value += emote.name;
-                }
-
-                _this.modal.modal("hide");
-                chatline.focus();
-            };
+            img.onclick = _this.emoteClickCallback.bind(null, emote);
 
             td.appendChild(img);
             row.appendChild(td);
@@ -2952,7 +3050,122 @@ EmoteList.prototype.loadPage = function (page) {
     this.page = page;
 };
 
-window.EMOTELIST = new EmoteList();
+function onEmoteClicked(emote) {
+    var val = chatline.value;
+    if (!val) {
+        chatline.value = emote.name;
+    } else {
+        if (!val.charAt(val.length - 1).match(/\s/)) {
+            chatline.value += " ";
+        }
+        chatline.value += emote.name;
+    }
+
+    window.EMOTELISTMODAL.modal("hide");
+    chatline.focus();
+}
+
+window.EMOTELIST = new EmoteList("#emotelist", onEmoteClicked);
+window.EMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
+
+function CSEmoteList(selector) {
+    EmoteList.call(this, selector);
+}
+
+CSEmoteList.prototype = Object.create(EmoteList.prototype);
+
+CSEmoteList.prototype.loadPage = function (page) {
+    var tbody = this.table.children[1];
+    tbody.innerHTML = "";
+
+    var start = page * this.itemsPerPage;
+    if (start >= this.emotes.length) {
+        return;
+    }
+    var end = Math.min(start + this.itemsPerPage, this.emotes.length);
+    var self = this;
+    this.page = page;
+
+    for (var i = start; i < end; i++) {
+        var row = document.createElement("tr");
+        tbody.appendChild(row);
+
+        (function (emote) {
+            // Add delete button
+            var tdDelete = document.createElement("td");
+            var btnDelete = document.createElement("button");
+            btnDelete.className = "btn btn-xs btn-danger";
+            var pennJillette = document.createElement("span");
+            pennJillette.className = "glyphicon glyphicon-trash";
+            btnDelete.appendChild(pennJillette);
+            tdDelete.appendChild(btnDelete);
+            row.appendChild(tdDelete);
+
+            btnDelete.onclick = function deleteEmote() {
+                document.getElementById("cs-emotes-newname").value = emote.name;
+                document.getElementById("cs-emotes-newimage").value = emote.image;
+                socket.emit("removeEmote", emote);
+            };
+
+            // Add emote name
+            // TODO: editable
+            var tdName = document.createElement("td");
+            var nameDisplay = document.createElement("code");
+            nameDisplay.textContent = emote.name;
+            tdName.appendChild(nameDisplay);
+            row.appendChild(tdName);
+
+            // Add emote image
+            var tdImage = document.createElement("td");
+            var urlDisplay = document.createElement("code");
+            urlDisplay.textContent = emote.image;
+            tdImage.appendChild(urlDisplay);
+            row.appendChild(tdImage);
+
+            // Add popover to display the image
+            var $urlDisplay = $(urlDisplay);
+            $urlDisplay.popover({
+                html: true,
+                trigger: "hover",
+                content: '<img src="' + emote.image + '" class="channel-emote">'
+            });
+
+            // Change the image for an emote
+            $urlDisplay.click(function (clickEvent) {
+                $(tdImage).find(".popover").remove();
+                $urlDisplay.detach();
+
+                var editInput = document.createElement("input");
+                editInput.className = "form-control";
+                editInput.type = "text";
+                editInput.value = emote.image;
+                tdImage.appendChild(editInput);
+                editInput.focus();
+
+                function save() {
+                    var val = editInput.value;
+                    tdImage.removeChild(editInput);
+                    tdImage.appendChild(urlDisplay);
+
+                    socket.emit("updateEmote", {
+                        name: emote.name,
+                        image: val
+                    });
+                }
+
+                editInput.onblur = save;
+                editInput.onkeyup = function (event) {
+                    if (event.keyCode === 13) {
+                        save();
+                    }
+                };
+            });
+        })(this.emotes[i]);
+    }
+};
+
+window.CSEMOTELIST = new CSEmoteList("#cs-emotes");
+window.CSEMOTELIST.sortAlphabetical = USEROPTS.emotelist_sort;
 
 function showChannelSettings() {
     hidePlayer();
@@ -2961,4 +3174,124 @@ function showChannelSettings() {
     });
 
     $("#channeloptions").modal();
+}
+
+// There is a point where this file needed to stop and we have clearly passed
+// it but let's keep going and see what happens
+
+function startQueueSpinner(data) {
+    if ($("#queueprogress").length > 0) {
+        return;
+    }
+
+    var id = data.id;
+    if (data.type === "yp") {
+        id = "$any";
+    }
+
+    var progress = $("<div/>").addClass("progress").attr("id", "queueprogress")
+            .data("queue-id", id);
+    var progressBar = $("<div/>").addClass("progress-bar progress-bar-striped active")
+            .attr({
+                role: "progressbar",
+                "aria-valuenow": "100",
+                "aria-valuemin": "0",
+                "aria-valuemax": "100",
+            }).css({
+                width: "100%"
+            }).appendTo(progress);
+    progress.appendTo($("#addfromurl"));
+}
+
+function stopQueueSpinner(data) {
+    var shouldRemove = (data !== null &&
+                        typeof data === 'object' &&
+                        $("#queueprogress").data("queue-id") === data.id);
+    shouldRemove = shouldRemove || data === null;
+    shouldRemove = shouldRemove || $("#queueprogress").data("queue-id") === "$any";
+    if (shouldRemove) {
+        $("#queueprogress").remove();
+    }
+}
+
+function maybePromptToUpgradeUserscript() {
+    if (document.getElementById('prompt-upgrade-drive-userscript')) {
+        return;
+    }
+
+    if (!window.hasDriveUserscript) {
+        return;
+    }
+
+    var currentVersion = [1, 3];
+    var userscriptVersion = window.driveUserscriptVersion;
+    if (!userscriptVersion) {
+        userscriptVersion = '1.0';
+    }
+    userscriptVersion = userscriptVersion.split('.').map(function (part) {
+        return parseInt(part, 10);
+    });
+
+    var older = false;
+    for (var i = 0; i < currentVersion.length; i++) {
+        if (userscriptVersion[i] < currentVersion[i]) {
+            older = true;
+        }
+    }
+
+    if (!older) {
+        return;
+    }
+
+    var alertBox = document.createElement('div');
+    alertBox.id = 'prompt-upgrade-drive-userscript';
+    alertBox.className = 'alert alert-info'
+    alertBox.innerHTML = 'A newer version of the Google Drive userscript is available.';
+    alertBox.appendChild(document.createElement('br'));
+    var infoLink = document.createElement('a');
+    infoLink.className = 'btn btn-info';
+    infoLink.href = '/google_drive_userscript';
+    infoLink.textContent = 'Click here for installation instructions';
+    infoLink.target = '_blank';
+    alertBox.appendChild(infoLink);
+
+    var closeButton = document.createElement('button');
+    closeButton.className = 'close pull-right';
+    closeButton.innerHTML = '&times;';
+    closeButton.onclick = function () {
+        alertBox.parentNode.removeChild(alertBox);
+    }
+    alertBox.insertBefore(closeButton, alertBox.firstChild)
+    document.getElementById('videowrap').appendChild(alertBox);
+}
+
+function backoffRetry(fn, cb, options) {
+    var jitter = options.jitter || 0;
+    var factor = options.factor || 1;
+    var isRetryable = options.isRetryable || function () { return true; };
+    var tries = 0;
+
+    function callback(error, result) {
+        tries++;
+        factor *= factor;
+        if (error) {
+            if (tries >= options.maxTries) {
+                console.log('Max tries exceeded');
+                cb(error, result);
+            } else if (isRetryable(error)) {
+                var offset = Math.random() * jitter;
+                var delay = options.delay * factor + offset;
+                console.log('Retrying on error: ' + error);
+                console.log('Waiting ' + delay + ' ms before retrying');
+
+                setTimeout(function () {
+                    fn(callback);
+                }, delay);
+            }
+        } else {
+            cb(error, result);
+        }
+    }
+
+    fn(callback);
 }

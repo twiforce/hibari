@@ -16,6 +16,17 @@ function wildcardSimilarChars(name) {
     return name.replace(/_/g, "\\_").replace(/[Il1oO0]/g, "_");
 }
 
+function parseProfile(data) {
+    try {
+        var profile = JSON.parse(data.profile);
+        profile.image = profile.image || "";
+        profile.text = profile.text || "";
+        data.profile = profile;
+    } catch (error) {
+        data.profile = { image: "", text: "" };
+    }
+}
+
 module.exports = {
     init: function () {
     },
@@ -83,6 +94,7 @@ module.exports = {
                 return callback("User does not exist");
             }
 
+            parseProfile(rows[0]);
             callback(null, rows[0]);
         });
     },
@@ -134,7 +146,7 @@ module.exports = {
                 callback(err, null);
                 return;
             }
-            
+
             if (accts.length >= Config.get("max-accounts-per-ip")) {
                 delete registrationLock[lname];
                 callback("You have registered too many accounts from this "+
@@ -207,7 +219,7 @@ module.exports = {
            the hashes match.
         */
 
-        db.query("SELECT name,password,global_rank FROM `users` WHERE name=?",
+        db.query("SELECT * FROM `users` WHERE name=?",
                  [name],
         function (err, rows) {
             if (err) {
@@ -226,50 +238,9 @@ module.exports = {
                 } else if (!match) {
                     callback("Invalid username/password combination", null);
                 } else {
+                    parseProfile(rows[0]);
                     callback(null, rows[0]);
                 }
-            });
-        });
-    },
-
-    /**
-     * Verify an auth string of the form name:hash
-     */
-    verifyAuth: function (auth, callback) {
-        if (typeof callback !== "function") {
-            return;
-        }
-
-        if (typeof auth !== "string") {
-            callback("Invalid auth string", null);
-            return;
-        }
-
-        var split = auth.split(":");
-        if (split.length !== 2) {
-            callback("Invalid auth string", null);
-            return;
-        }
-
-        var name = split[0];
-        var hash = split[1];
-        db.query("SELECT name,password,global_rank FROM `users` WHERE " +
-                 "name=? and password=?", [name, hash],
-        function (err, rows) {
-            if (err) {
-                callback(err, null);
-                return;
-            }
-
-            if (rows.length === 0) {
-                callback("Auth string does not match an existing user", null);
-                return;
-            }
-
-            callback(null, {
-                name: rows[0].name,
-                hash: rows[0].password,
-                global_rank: rows[0].global_rank
             });
         });
     },

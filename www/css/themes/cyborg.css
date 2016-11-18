@@ -39,7 +39,7 @@ input.form-control[type="email"], textarea.form-control {
     color: #c8c8c8;
 }
 
-.profile-box, .user-dropdown, #emotelist td {
+.profile-box, .user-dropdown, .emotelist-table td {
     color: #c8c8c8;
     background-color: #2d2d2d;
 }
@@ -86,3 +86,7 @@ input.form-control[type="email"], textarea.form-control {
     background-color: #333333;
 }
 
+#newmessages-indicator-bghack {
+    background: rgb(32, 32, 32);
+    background: rgba(32, 32, 32, 0.9);
+}

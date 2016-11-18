@@ -46,11 +46,11 @@ input.form-control[type="email"], textarea.form-control {
     border-radius: 0px !important;
 }
 
-#emotelist table {
+.emotelist-table {
     background-color: #2a2d30;
 }
 
-#emotelist td {
+.emotelist-table td {
     background-color: rgba(28, 30, 34, 0.95);
     border: none;
 }
@@ -185,4 +185,9 @@ input.form-control[type="email"], textarea.form-control {
     margin-bottom: 9px;
     min-height: 20px;
     padding: 10px 19px !important;
+}
+
+#newmessages-indicator-bghack {
+    background: rgb(16, 16, 16);
+    background: rgba(16, 16, 16, 0.9);
 }

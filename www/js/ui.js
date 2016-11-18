@@ -28,26 +28,24 @@ $("#modflair").click(function () {
     var m = $("#modflair");
     if (m.hasClass("label-success")) {
         USEROPTS.modhat = false;
-        m.removeClass("label-success")
-         .addClass("label-default");
+        m.removeClass("label-success");
+        if (SUPERADMIN) {
+            USEROPTS.adminhat = true;
+            m.addClass("label-danger");
+        } else {
+            m.addClass("label-default");
+        }
+    } else if (m.hasClass("label-danger")) {
+        USEROPTS.adminhat = false;
+        m.removeClass("label-danger")
+            .addClass("label-default");
     } else {
         USEROPTS.modhat = true;
         m.removeClass("label-default")
-         .addClass("label-success");
+            .addClass("label-success");
     }
-});
-
-$("#adminflair").click(function () {
-    var m = $("#adminflair");
-    if (m.hasClass("label-danger")) {
-        USEROPTS.adminhat = false;
-        m.removeClass("label-danger")
-         .addClass("label-default");
-    } else {
-        USEROPTS.adminhat = true;
-        m.removeClass("label-default")
-         .addClass("label-danger");
-    }
+    $("#us-modflair").prop("checked", USEROPTS.modhat);
+    setOpt('modhat', USEROPTS.modhat);
 });
 
 $("#usercount").mouseenter(function (ev) {
@@ -81,8 +79,29 @@ $("#usercount").mouseleave(function () {
     $("#usercount").find(".profile-box").remove();
 });
 
-$("#messagebuffer").mouseenter(function() { SCROLLCHAT = false; });
-$("#messagebuffer").mouseleave(function() { SCROLLCHAT = true; });
+$("#messagebuffer").scroll(function (ev) {
+    if (IGNORE_SCROLL_EVENT) {
+        // Skip event, this was triggered by scrollChat() and not by a user action.
+        // Reset for next event.
+        IGNORE_SCROLL_EVENT = false;
+        return;
+    }
+
+    var m = $("#messagebuffer");
+    var lastChildHeight = 0;
+    var messages = m.children();
+    if (messages.length > 0) {
+        lastChildHeight = messages[messages.length - 1].clientHeight || 0;
+    }
+
+    var isCaughtUp = m.height() + m.scrollTop() >= m.prop("scrollHeight") - lastChildHeight;
+    if (isCaughtUp) {
+        SCROLLCHAT = true;
+        $("#newmessages-indicator").remove();
+    } else {
+        SCROLLCHAT = false;
+    }
+});
 
 $("#guestname").keydown(function (ev) {
     if (ev.keyCode === 13) {
@@ -388,7 +407,7 @@ function queue(pos, src) {
             if (data.id == null || data.type == null) {
                 makeAlert("Error", "Failed to parse link " + link +
                           ".  Please check that it is correct",
-                          "alert-danger")
+                          "alert-danger", true)
                     .insertAfter($("#addfromurl"));
             } else {
                 emitQueue.push({
@@ -416,6 +435,7 @@ function queue(pos, src) {
             delete data.link;
 
             socket.emit("queue", data);
+            startQueueSpinner(data);
             if (emitQueue.length > 0) {
                 notification.textContent = "Waiting to queue " + emitQueue[0].link;
             } else {
@@ -439,7 +459,8 @@ $("#mediaurl").keyup(function(ev) {
         queue("end", "url");
     } else {
         var url = $("#mediaurl").val().split("?")[0];
-        if (url.match(/^https?:\/\/(.*)?\.(flv|mp4|og[gv]|webm|mp3|mov)$/)) {
+        if (url.match(/^https?:\/\/(.*)?\.(flv|mp4|og[gv]|webm|mp3|mov)$/) ||
+                url.match(/^fi:/)) {
             var title = $("#addfromurl-title");
             if (title.length === 0) {
                 title = $("<div/>")
@@ -481,9 +502,14 @@ $("#voteskip").click(function() {
 $("#getplaylist").click(function() {
     var callback = function(data) {
         hidePlayer();
-        socket.listeners("playlist").splice(
-            socket.listeners("playlist").indexOf(callback)
-        );
+        var idx = socket.listeners("errorMsg").indexOf(errCallback);
+        if (idx >= 0) {
+            socket.listeners("errorMsg").splice(idx);
+        }
+        idx = socket.listeners("playlist").indexOf(callback);
+        if (idx >= 0) {
+            socket.listeners("playlist").splice(idx);
+        }
         var list = [];
         for(var i = 0; i < data.length; i++) {
             var entry = formatURL(data[i].media);
@@ -515,6 +541,22 @@ $("#getplaylist").click(function() {
         outer.modal();
     };
     socket.on("playlist", callback);
+    var errCallback = function(data) {
+        if (data.code !== "REQ_PLAYLIST_LIMIT_REACHED") {
+            return;
+        }
+
+        var idx = socket.listeners("errorMsg").indexOf(errCallback);
+        if (idx >= 0) {
+            socket.listeners("errorMsg").splice(idx);
+        }
+
+        idx = socket.listeners("playlist").indexOf(callback);
+        if (idx >= 0) {
+            socket.listeners("playlist").splice(idx);
+        }
+    };
+    socket.on("errorMsg", errCallback);
     socket.emit("requestPlaylist");
 });
 
@@ -602,6 +644,36 @@ $(".cs-textbox").keyup(function () {
             };
         } else {
             data[key] = value;
+        }
+        socket.emit("setOptions", data);
+    }, 1000);
+});
+
+$(".cs-textbox-timeinput").keyup(function (event) {
+    var box = $(this);
+    var key = box.attr("id").replace("cs-", "");
+    var value = box.val();
+    var lastkey = Date.now();
+    box.data("lastkey", lastkey);
+
+    setTimeout(function () {
+        if (box.data("lastkey") !== lastkey || box.val() !== value) {
+            return;
+        }
+
+        $("#cs-textbox-timeinput-validation-error-" + key).remove();
+        $(event.target).parent().removeClass("has-error");
+        var data = {};
+        try {
+            data[key] = parseTimeout(value);
+        } catch (error) {
+            var msg = "Invalid timespan value '" + value + "'.  Please use the format " +
+                      "HH:MM:SS or enter a single number for the number of seconds.";
+            var validationError = $("<p/>").addClass("text-danger").text(msg)
+                    .attr("id", "cs-textbox-timeinput-validation-error-" + key);
+            validationError.insertAfter(event.target);
+            $(event.target).parent().addClass("has-error");
+            return;
         }
         socket.emit("setOptions", data);
     }, 1000);
@@ -807,30 +879,17 @@ applyOpts();
     }
 })();
 
+var EMOTELISTMODAL = $("#emotelist");
+EMOTELISTMODAL.on("hidden.bs.modal", unhidePlayer);
 $("#emotelistbtn").click(function () {
-    EMOTELIST.show();
+    EMOTELISTMODAL.modal();
 });
 
-$("#emotelist-search").keyup(function () {
-    var value = this.value.toLowerCase();
-    if (value) {
-        EMOTELIST.filter = function (emote) {
-            return emote.name.toLowerCase().indexOf(value) >= 0;
-        };
-    } else {
-        EMOTELIST.filter = null;
-    }
-    EMOTELIST.handleChange();
-    EMOTELIST.loadPage(0);
-});
-
-$("#emotelist-alphabetical").prop("checked", USEROPTS.emotelist_sort);
-$("#emotelist-alphabetical").change(function () {
+EMOTELISTMODAL.find(".emotelist-alphabetical").change(function () {
     USEROPTS.emotelist_sort = this.checked;
     setOpt("emotelist_sort", USEROPTS.emotelist_sort);
-    EMOTELIST.handleChange();
-    EMOTELIST.loadPage(0);
 });
+EMOTELISTMODAL.find(".emotelist-alphabetical").prop("checked", USEROPTS.emotelist_sort);
 
 $("#fullscreenbtn").click(function () {
     var elem = document.querySelector("#videowrap .embed-responsive");
@@ -844,3 +903,25 @@ $("#fullscreenbtn").click(function () {
         fn.call(elem);
     }
 });
+
+function handleCSSJSTooLarge(selector) {
+    if (this.value.length > 20000) {
+        var warning = $(selector);
+        if (warning.length > 0) {
+            return;
+        }
+
+        warning = makeAlert("Maximum Size Exceeded", "Inline CSS and JavaScript are " +
+                "limited to 20,000 characters or less.  If you need more room, you " +
+                "need to use the external CSS or JavaScript option.", "alert-danger")
+                .attr("id", selector.replace(/#/, ""));
+        warning.insertBefore(this);
+    } else {
+        $(selector).remove();
+    }
+}
+
+$("#cs-csstext").bind("input", handleCSSJSTooLarge.bind($("#cs-csstext")[0],
+        "#cs-csstext-too-big"));
+$("#cs-jstext").bind("input", handleCSSJSTooLarge.bind($("#cs-jstext")[0],
+        "#cs-jstext-too-big"));
