@@ -1,8 +1,8 @@
 mixin email(e, k)
-  button.btn.btn-xs.btn-default(onclick="showEmail(this, '"+e+"', '"+k+"')") Показать email
+  button.btn.btn-xs.btn-default(onclick="showEmail(this, '"+e+"', '"+k+"')") Show Email
 
 doctype html
-html(lang="ru")
+html(lang="en")
   head
     include head
     +head()
@@ -18,10 +18,10 @@ html(lang="ru")
       section#mainpage
         .container
           .col-md-8.col-md-offset-2
-            h1 Контакты
-            h3 Почта
+            h1 Contact
+            h3 Email
             if contacts.length == 0
-              p Контакты не указаны.
+              p No contacts listed.
             else
               each contact in contacts
                 strong= contact.name

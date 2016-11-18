@@ -1,11 +1,11 @@
 doctype html
-html(lang="ru")
+html(lang="en")
   head
     include head
     +head()
   body
     #wrap
-      nav.navbar.navbargit checkout 3.0-inverse.navbar-fixed-top(role="navigation")
+      nav.navbar.navbar-inverse.navbar-fixed-top(role="navigation")
         include nav
         +navheader()
         #nav-collapsible.collapse.navbar-collapse
@@ -15,25 +15,23 @@ html(lang="ru")
           +navloginlogout("/")
       section#mainpage
         .container
-          .col-lg-8.col-md-8
-            h1 Добро пожаловать. Снова.
-            p SynchTube - место для совместного просмотра роликов Youtube, прямых эфиров Twitch и <a href="help.html" rel="tooltip" data-toggle="tooltip" data-placement="top" title="" data-original-title="Hitbox, Vimeo, Dailymotion, Soundcloud, Ustream, Livestream и даже файлы по прямым ссылкам">многого другого</a>. Зарегистрируйте комнату, настройте ее по своему вкусу, позовите друзей и начните просмотр - вместе.
-            h3 Открытые комнаты
+          .col-lg-9.col-md-9
+            h3 Public Channels
             table.table.table-bordered.table-striped
               thead
-                th Комната
-                th Онлайн
-                th Воспроизводится
+                th Channel
+                th # Connected
+                th Now Playing
               tbody
                 each chan in channels
                   tr
                     td: a(href="/r/"+chan.name) #{chan.pagetitle} (#{chan.name})
                     td= chan.usercount
                     td= chan.mediatitle
-          .col-lg-4.col-md-4
-            h3 Зайти в комнату
-            input#channelname.form-control(type="text", placeholder="Название комнаты")
-            p.text-muted Зарегистрировать свою комнату можно <a href="/account/channels">здесь</a>.
+          .col-lg-3.col-md-3
+            h3 Enter Channel
+            input#channelname.form-control(type="text", placeholder="Channel Name")
+            p.text-muted New channels can be registered from the <a href="/account/channels">My Channels</a> page.
     include footer
     +footer()
     script(type="text/javascript").
