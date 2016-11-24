@@ -1,5 +1,5 @@
 doctype html
-html(lang="en")
+html(lang="ru")
   head
     include head
     +head()
@@ -15,27 +15,22 @@ html(lang="en")
       section#mainpage
         .container
           .col-md-12
-            h1 User Agreement
+            h1 Пользовательское соглашение
             p.
-              By visiting #{siteTitle} (#{domain}), you agree to the following user agreement.
-            h3 Legal Stuff
+              Посещая #{siteTitle} (#{domain}), вы соглашаетесь со следующим пользовательским соглашением:
+            h3 Юридические вопросы
             ul
-              li All content and activity this website must comply with United States law, and where applicable, local laws.  Prohibited content and activities include, but are not limited to:
+              li Контент и пользовательская активность на сайте не должна в явном виде нарушать законы Германии. В число запрещённых вещей вхоят:
                 ul
-                  li Child pornography
-                  li Warez
-                  li Copyright infringement
-                  li Blackmail, slander, or other defamatory statements
-                  li Phishing
-              li Content on #{siteTitle} is provided "as-is".  #{siteTitle} makes no warranties, express or implied, and hereby disclaims and negates all other warranties, including, without limitation, implied warranties or conditions of merchantability, fitness for a particular purpose, or non-infringement of intellectual property or other violation of rights.  Furthermore, #{siteTitle} does not make any representations concerning the accuracy or reliability of content present on #{siteTitle}.
-              li #{siteTitle} permits users to share links, embedded content, or other content insofar as the shared content complies with this user agreement, United States law, and where applicable, local laws.  #{siteTitle} is not responsible for the content shared, or any consequences of sharing such content.  #{siteTitle} does not endorse any user-provided content.  Viewing shared content is done at the user's own risk.
-          h3 General Rules
+                  li Детская порнография
+                  li Нарушение авторских прав
+              li Контент, размещённый на #{siteTitle}, предоставляется по принципу "as-is". Администрация сайта не несёт ответственности за размещаемый пользователями контент и возможный нанесённый ущерб, в том числе нанесённый другими пользователями сайта.
+          h3 Правила пользования сайтом
           p.
-            While moderation is largely left to the discretion of channel moderators and administrators, the following rules apply globally and must be observed at all times on the site.  Failure to comply with these rules may result in temporary or permanent removal of your user account from the website.
-          ul
-            li Trolling, spamming, or otherwise intentionally disrupting any channel is not allowed
-            li Bullying or otherwise intending to hurt other users is not allowed
-            li Attempting to exploit the site in order to gain unauthorized access or interrupt service is not allowed.  If you believe you have found an exploit, please responsibly disclose it to an administrator.
-            li Use good judgement when representing #{siteTitle} on other websites.  Do not spam links to your channel.
+            Регистрация комнат на #{siteTitle} бесплатна. После регистрации вы получаете ограниченные права на использование ресурсов сайта, включая последующее удаление комнаты по собственному желанию. Пользователь, зарегистрировавший комнату и назначенные им администраторы обязаны проверять соответствие размещаемого пользователями комнаты контента и предпринимать меры по устранению нарушений самостоятельно.
+          p.
+            Прямое скрытие ссылок на оригинальные репозитории hibari и sync, ссылок на главную страницу сайта или пользовательское соглашение запрещено. Администрация сайта оставляет за собой право приостановить активность и/или удалить любой профиль или комнату, нарушающие пользовательское соглашение, в том числе без объяснения причины.
+          p.
+            Запрещено вмешиваться в работу сайта или отдельных комнат, вами не зарегистрированных. Если вы нашли ошибку в работе сайта, уязвимость или эксплоит — свяжитесь с администраторами. Сохраняйте для сайта хорошее лицо — не стоит спамить чужие сайты ссылками на #{siteTitle}.
     include footer
     +footer()
