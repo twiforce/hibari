@@ -24,31 +24,32 @@ mixin textbox(id, label, placeholder)
 
 mixin us-general
   #us-general.tab-pane
-    h4 General Preferences
+    h4 Основные настройки
     form.form-horizontal(action="javascript:void(0)")
       .form-group
-        label.control-label.col-sm-4(for="#us-theme") Theme
+        label.control-label.col-sm-4(for="#us-theme") Тема оформления
         .col-sm-8
           select#us-theme.form-control
-            option(value="/css/themes/light.css") Light
+            option(value="/css/themes/light.css") Легкая
             option(value="/css/themes/bootstrap-theme.min.css") Bootstrap
             option(value="/css/themes/slate.css") Slate
             option(value="/css/themes/cyborg.css") Cyborg
+            option(value="/css/themes/holo.css") Holo
             option(value="/css/themes/modern.css") Modern
       .form-group
-        label.control-label.col-sm-4(for="#us-layout") Layout
+        label.control-label.col-sm-4(for="#us-layout") Раскладка
         .col-sm-8
           select#us-layout.form-control
-            option(value="default") Compact
-            option(value="synchtube") Synchtube (flipped)
+            option(value="default") Компактная
+            option(value="synchtube") Synchtube
             option(value="fluid") Fluid
             option(value="synchtube-fluid") Synchtube + Fluid
             option(value="hd") HD
       .col-sm-4
       .col-sm-8
         p.text-danger Changing layouts may require refreshing to take effect.
-      +rcheckbox("us-no-channelcss", "Ignore Channel CSS")
-      +rcheckbox("us-no-channeljs", "Ignore Channel Javascript")
+      +rcheckbox("us-no-channelcss", "Игнорировать CSS каналов")
+      +rcheckbox("us-no-channeljs", "Игнорировать Javascript каналов")
       .clear
 
 mixin us-scripts
@@ -64,60 +65,60 @@ mixin us-scripts
 
 mixin us-playback
   #us-playback.tab-pane
-    h4 Playback Preferences
+    h4 Воспроизведение
     form.form-horizontal(action="javascript:void(0)")
-      +rcheckbox("us-synch", "Synchronize video playback")
-      +textbox("us-synch-accuracy", "Synch threshold (seconds)", "2")
-      +rcheckbox("us-wmode-transparent", "Set wmode=transparent")
+      +rcheckbox("us-synch", "Синхронизовать видео")
+      +textbox("us-synch-accuracy", "Частота синхронизации (сек)", "2")
+      +rcheckbox("us-wmode-transparent", "Включить wmode=transparent")
       .col-sm-4
       .col-sm-8
-        p.text-info Setting <code>wmode=transparent</code> allows objects to be displayed above the video player, but may cause performance issues on some systems.
-      +rcheckbox("us-hidevideo", "Remove the video player")
-      +rcheckbox("us-playlistbuttons", "Hide playlist buttons by default")
-      +rcheckbox("us-oldbtns", "Old style playlist buttons")
+        p.text-info Эта настройка позволяет объектам отображаться над окном видео, но может уменьшить производительность сайта.
+      +rcheckbox("us-hidevideo", "Удалить видео")
+      +rcheckbox("us-playlistbuttons", "Спрятать кнопки плейлиста")
+      +rcheckbox("us-oldbtns", "Старый стиль кнопок плейлиста")
       .form-group
-        label.control-label.col-sm-4(for="#us-default-quality") Quality Preference
+        label.control-label.col-sm-4(for="#us-default-quality") Стандартное качество
         .col-sm-8
           select#us-default-quality.form-control
-            option(value="auto") Auto
+            option(value="auto") Автоматически
             option(value="240") 240p
             option(value="360") 360p
             option(value="480") 480p
             option(value="720") 720p
             option(value="1080") 1080p
-            option(value="best") Highest Available
+            option(value="best") Максимально доступное
 
 mixin us-chat
   #us-chat.tab-pane
-    h4 Chat Preferences
+    h4 Чат
     form.form-horizontal(action="javascript:void(0)")
-      +rcheckbox("us-chat-timestamp", "Show timestamps in chat")
-      +rcheckbox("us-sort-rank", "Sort userlist by rank")
-      +rcheckbox("us-sort-afk", "Sort AFKers to bottom")
+      +rcheckbox("us-chat-timestamp", "Показывать время")
+      +rcheckbox("us-sort-rank", "Сортировать пользователей по рангу")
+      +rcheckbox("us-sort-afk", "Сортировать отошедших вниз")
       .col-sm-4
       .col-sm-8
-        p.text-info The following 2 options apply to how and when you will be notified if a new chat message is received while CyTube is not the active window.
+        p.text-info Следующие две настройки будут срабатывать только тогда, когда окно или вкладка с сайтом неактивны.
       .form-group
-        label.control-label.col-sm-4(for="#us-blink-title") Blink page title on new messages
+        label.control-label.col-sm-4(for="#us-blink-title") Мигать заголовком окна при новых сообщениях
         .col-sm-8
           select#us-blink-title.form-control
-            option(value="never") Never
-            option(value="onlyping") Only when I am mentioned or PMed
-            option(value="always") Always
+            option(value="never") Никогда
+            option(value="onlyping") Только когда меня упомянули в чате или прислали ЛС
+            option(value="always") Всегда
       .form-group
-        label.control-label.col-sm-4(for="#us-ping-sound") Notification sound on new messages
+        label.control-label.col-sm-4(for="#us-ping-sound") Звук уведомления при новых сообщениях
         .col-sm-8
           select#us-ping-sound.form-control
-            option(value="never") Never
-            option(value="onlyping") Only when I am mentioned or PMed
-            option(value="always") Always
-      +rcheckbox("us-sendbtn", "Add a send button to chat")
-      +rcheckbox("us-no-emotes", "Disable chat emotes")
-      +rcheckbox("us-strip-image", "Remove images from chat")
+            option(value="never") Никогда
+            option(value="onlyping") Только когда меня упомянули в чате или прислали ЛС
+            option(value="always") Всегда
+      +rcheckbox("us-sendbtn", "Добавить кнопку \"Отправить\"")
+      +rcheckbox("us-no-emotes", "Отключить смайлы")
+      +rcheckbox("us-strip-image", "Не показывать изображения в чате")
 
 mixin us-mod
   #us-mod.tab-pane
-    h4 Moderator Preferences
+    h4 Настройки модератора
     form.form-horizontal(action="javascript:void(0)")
-      +rcheckbox("us-modflair", "Show name color")
-      +rcheckbox("us-shadowchat", "Show shadowmuted messages")
+      mixin rcheckbox("us-modflair", "Показывать цвет ранга")
+      mixin rcheckbox("us-shadowchat", "Показывать скрытые сообщения")
