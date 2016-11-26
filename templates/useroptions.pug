@@ -120,5 +120,5 @@ mixin us-mod
   #us-mod.tab-pane
     h4 Настройки модератора
     form.form-horizontal(action="javascript:void(0)")
-      mixin rcheckbox("us-modflair", "Показывать цвет ранга")
-      mixin rcheckbox("us-shadowchat", "Показывать скрытые сообщения")
+      +rcheckbox("us-modflair", "Показывать цвет ранга")
+      +rcheckbox("us-shadowchat", "Показывать скрытые сообщения")
