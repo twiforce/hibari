@@ -2,19 +2,11 @@ var $util = require("../utilities");
 var bcrypt = require("bcrypt");
 var db = require("../database");
 var Config = require("../config");
-var Logger = require("../logger");
+
+const LOGGER = require('@calzoneman/jsli')('database/accounts');
 
 var registrationLock = {};
 var blackHole = function () { };
-
-/**
- * Replaces look-alike characters with "_" (single character wildcard) for
- * use in LIKE queries.  This prevents guests from taking names that look
- * visually identical to existing names in certain fonts.
- */
-function wildcardSimilarChars(name) {
-    return name.replace(/_/g, "\\_").replace(/[Il1oO0]/g, "_");
-}
 
 function parseProfile(data) {
     try {
@@ -32,11 +24,22 @@ module.exports = {
     },
 
     /**
+     * Convert a username for deduplication purposes.
+     * Collapses visibily similar characters into a single character.
+     * @param name
+     */
+    dedupeUsername: function dedupeUsername(name) {
+        return name.replace(/[Il1]/ig, '1')
+            .replace(/[o0]/ig, '0')
+            .replace(/[_-]/g, '_');
+    },
+
+    /**
      * Check if a username is taken
      */
     isUsernameTaken: function (name, callback) {
-        db.query("SELECT name FROM `users` WHERE name LIKE ? ESCAPE '\\\\'",
-                 [wildcardSimilarChars(name)],
+        db.query("SELECT name FROM `users` WHERE name = ? or name_dedupe = ?",
+                 [name, module.exports.dedupeUsername(name)],
         function (err, rows) {
             if (err) {
                 callback(err, true);
@@ -47,29 +50,16 @@ module.exports = {
     },
 
     /**
-     * Search for a user by name
+     * Search for a user by any field
      */
-    search: function (name, fields, callback) {
-        /* This bit allows it to accept varargs
-           Function can be called as (name, callback) or
-           (name, fields, callback)
-        */
-        if (typeof callback !== "function") {
-            if (typeof fields === "function") {
-                callback = fields;
-                fields = ["name"];
-            } else {
-                return;
-            }
-        }
-
+    search: function (where, like, fields, callback) {
         // Don't allow search to return password hashes
         if (fields.indexOf("password") !== -1) {
             fields.splice(fields.indexOf("password"));
         }
 
-        db.query("SELECT " + fields.join(",") + " FROM `users` WHERE name LIKE ?",
-                 ["%"+name+"%"],
+        db.query(`SELECT ${fields.join(",")} FROM \`users\` WHERE ${where} LIKE ?`,
+                 ["%"+like+"%"],
         function (err, rows) {
             if (err) {
                 callback(err, true);
@@ -175,10 +165,10 @@ module.exports = {
                     }
 
                     db.query("INSERT INTO `users` " +
-                             "(`name`, `password`, `global_rank`, `email`, `profile`, `ip`, `time`)" +
+                             "(`name`, `password`, `global_rank`, `email`, `profile`, `ip`, `time`, `name_dedupe`)" +
                              " VALUES " +
-                             "(?, ?, ?, ?, '', ?, ?)",
-                             [name, hash, 1, email, ip, Date.now()],
+                             "(?, ?, ?, ?, '', ?, ?, ?)",
+                             [name, hash, 1, email, ip, Date.now(), module.exports.dedupeUsername(name)],
                     function (err, res) {
                         delete registrationLock[lname];
                         if (err) {
@@ -448,7 +438,7 @@ module.exports = {
                     userprof.text = profile.text || "";
                     callback(null, userprof);
                 } catch (e) {
-                    Logger.errlog.log("Corrupt profile: " + rows[0].profile +
+                    LOGGER.error("Corrupt profile: " + rows[0].profile +
                         " (user: " + name + ")");
                     callback(null, userprof);
                 }

@@ -5,13 +5,14 @@ html(lang="ru")
     +head()
     link(href="//code.jquery.com/ui/1.10.3/themes/smoothness/jquery-ui.css", rel="stylesheet")
     link(rel="stylesheet", href="/css/video-js.css")
+    link(rel="stylesheet", href="/css/videojs-resolution-switcher.css")
   body
     #wrap
       nav.navbar.navbar-inverse.navbar-fixed-top(role="navigation")
         include nav
         +navheader()
         #nav-collapsible.collapse.navbar-collapse
-          - var cname = "/r/" + channelName
+          - var cname = `/${channelPath}/${channelName}`
           ul.nav.navbar-nav
             +navdefaultlinks(cname)
             li: a(href="javascript:void(0)", onclick="javascript:showUserOptions()") Настройки
@@ -50,7 +51,10 @@ html(lang="ru")
                 span.input-group-addon Войти гостем
                 input#guestname.form-control(type="text", placeholder="Введите имя и нажмите Enter")
             #videowrap.col-lg-7.col-md-7
-              p#currenttitle Ничего не воспроизводится
+              p#videowrap-header
+                span#resize-video-smaller.glyphicon.glyphicon-minus.pointer(title="Make the video smaller")
+                span#resize-video-larger.glyphicon.glyphicon-plus.pointer(title="Make the video larger")
+                span#currenttitle Ничего не воспроизводится
               .embed-responsive.embed-responsive-16by9
                 #ytapiplayer.embed-responsive-item
           #controlsrow.row
@@ -246,6 +250,7 @@ html(lang="ru")
     script(id="socketio-js", src=sioSource)
     script(src="/js/data.js")
     script(src="/js/util.js")
+    script(src="/js/tabcomplete.js")
     script(src="/js/player.js")
     script(src="/js/paginator.js")
     script(src="/js/ui.js")
@@ -256,4 +261,5 @@ html(lang="ru")
     script(defer, src="/js/froogaloop.min.js")
     script(defer, src="/js/video.js")
     script(defer, src="/js/videojs-contrib-hls.min.js")
+    script(defer, src="/js/videojs-resolution-switcher.js")
     script(defer, src="https://player.twitch.tv/js/embed/v1.js")

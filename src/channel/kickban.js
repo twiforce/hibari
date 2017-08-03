@@ -44,28 +44,37 @@ function checkNameBan(cname, name, cb) {
     });
 }
 
+function checkBan(cname, ip, name, cb) {
+    db.channels.isBanned(cname, ip, name, function (err, banned) {
+        if (err) {
+            cb(false);
+        } else {
+            cb(banned);
+        }
+    });
+}
+
 KickBanModule.prototype.onUserPreJoin = function (user, data, cb) {
     if (!this.channel.is(Flags.C_REGISTERED)) {
         return cb(null, ChannelModule.PASSTHROUGH);
     }
 
-    var cname = this.channel.name;
-    checkIPBan(cname, user.realip, function (banned) {
+    const cname = this.channel.name;
+    const check = (user.getName() !== '') ? checkBan : checkIPBan;
+    function callback(banned) {
         if (banned) {
             cb(null, ChannelModule.DENY);
-            user.kick("Your IP address is banned from this channel.");
+            user.kick("You are banned from this channel.");
         } else {
-            checkNameBan(cname, user.getName(), function (banned) {
-                if (banned) {
-                    cb(null, ChannelModule.DENY);
-                    user.kick("Your username is banned from this channel.");
-                } else {
-                    cb(null, ChannelModule.PASSTHROUGH);
-                }
-            });
+            cb(null, ChannelModule.PASSTHROUGH);
         }
-    });
+    }
 
+    if (user.getName() !== '') {
+        checkBan(cname, user.realip, user.getName(), callback);
+    } else {
+        checkIPBan(cname, user.realip, callback);
+    }
 };
 
 KickBanModule.prototype.onUserPostJoin = function (user) {

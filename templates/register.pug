@@ -32,17 +32,22 @@ html(lang="ru")
               input(type="hidden", name="_csrf", value=csrfToken)
               .form-group
                 label.control-label(for="username") Логин
-                input#username.form-control(type="text", name="name")
+                input#username.form-control(type="text", name="name", onkeyup="checkUsername()", maxlength="20")
+                p#validate_username.text-danger.pull-right
               .form-group
                 label.control-label(for="password") Пароль
                 input#password.form-control(type="password", name="password", onkeyup="checkPasswords()")
+                p#validate_password.text-danger.pull-right
               .form-group
                 label.control-label(for="password_confirm") Пароль еще раз
                 input#password_confirm.form-control(type="password", onkeyup="checkPasswords()")
+                p#validate_confirm.text-danger.pull-right
               .form-group
                 label.control-label(for="email") Email (необязательно)
                 input#email.form-control(type="email", name="email")
-                p Заполнив это поле, у вас останется возможность восстановить свой аккаунт, если вы вдруг забудете пароль. Ваш адрес нигде не будет отображаться и используется только для восстановления пароля.
+                p#validate_email.text-danger.pull-right
+                p
+                    | Заполнив это поле, у вас останется возможность восстановить свой аккаунт, если вы вдруг забудете пароль. Ваш адрес нигде не будет отображаться и используется только для восстановления пароля.
               button#registerbtn.btn.btn-success.btn-block(type="submit") Зарегистрироваться!
         else
           .col-lg-6.col-lg-offset-3.col-md-6.col-md-offset-3
@@ -56,56 +61,67 @@ html(lang="ru")
       function verify() {
         var valid = checkUsername();
         valid = checkPasswords() && valid;
+        valid = checkEmail() && valid;
         return valid;
       }
       function checkUsername() {
-        var name = $("#username").val();
-        $("#usernameerror").remove();
+        function stateError(text){
+          target.parent()
+            .addClass("has-error")
+            .removeClass("has-success");
+          $("#validate_username").text(text);
+        }
+        var target = $("#username");
+        var name = target.val();
         if (name === "") {
-          $("#username").parent().addClass("has-error");
-          $("<p/>").addClass("text-danger")
-            .attr("id", "usernameerror")
-            .text("Имя пользователя не может быть пустым.")
-            .insertAfter($("#username"));
+          stateError('Имя пользователя не может быть пустым.')
           return false;
         } else if (!(/^[-\w\u00c0-\u00ff]{1,20}$/).test(name)) {
-          $("#username").parent().addClass("has-error");
-          $("<p/>").addClass("text-danger")
-            .attr("id", "usernameerror")
-            .text("Имя пользователя должно состоять из 1-20 символов a-Z, A-Z, 0-9 " +
-                  ", -, или _.")
-            .insertAfter($("#username"));
+          stateError("Имя пользователя должно состоять из 1-20 символов a-Z, A-Z, 0-9 " +
+              ", -, или _.");
           return false;
         } else {
-          $("#username").parent().removeClass("has-error")
+          target.parent()
+            .removeClass("has-error")
             .addClass("has-success");
+          $("#validate_username").text('');
         }
       }
       function checkPasswords() {
-        var pw = $("#password").val();
-        var pwc = $("#password_confirm").val();
-        $("#passwordempty").remove();
-        $("#passwordmismatch").remove();
+        function stateError(text, target, validator){
+          target.parent()
+            .addClass("has-error")
+            .removeClass("has-success");
+          $(`#${validator}`).text(text);
+        }
+        var target = $("#password");
+        var target2 = $("#password_confirm");
+        var pw = target.val();
+        var pwc = target2.val();
+
+        $("#validate_password").text('');
+        $("#validate_confirm").text('');
         if (pw === "") {
-          $("#password").parent().addClass("has-error");
-          $("<p/>").addClass("text-danger")
-            .attr("id", "passwordempty")
-            .text("Пароль не может быть пустым.")
-            .insertAfter($("#password"));
+          stateError('Пароль не может быть пустым.', target, 'validate_password')
           return false;
         } else {
-          $("#password").parent().removeClass("has-error")
+          target.parent()
+            .removeClass("has-error")
             .addClass("has-success");
           if (pw !== pwc) {
-            $("#password_confirm").parent().addClass("has-error");
-            $("<p/>").addClass("text-danger")
-              .attr("id", "passwordmismatch")
-              .text("Введенные пароли не совпадают.")
-              .insertAfter($("#password_confirm"));
+            stateError('Введенные пароли не совпадают.', target2, 'validate_confirm')
             return false;
           } else {
-            $("#password_confirm").parent().removeClass("has-error")
+            target2.parent()
+              .removeClass("has-error")
               .addClass("has-success");
           }
         }
+      }
+      function checkEmail() {
+        var email = $("#email").val();
+        if (email.trim() === "") {
+          return confirm("Вы уверены, что хотите зарегистрироваться без указания почты? Если вы забудете пароль, вы не сможете восстановить ваш аккаунт и привязанные к нему комнаты!");
+        }
+        return true;
       }

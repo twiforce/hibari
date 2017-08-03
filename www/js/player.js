@@ -1,5 +1,5 @@
 (function() {
-  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDrivePlayer, GoogleDriveYouTubePlayer, HLSPlayer, HitboxPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, USTREAM_ERROR, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
+  var CUSTOM_EMBED_WARNING, CustomEmbedPlayer, DEFAULT_ERROR, DailymotionPlayer, EmbedPlayer, FilePlayer, GoogleDrivePlayer, GoogleDriveYouTubePlayer, HLSPlayer, ImgurPlayer, LivestreamPlayer, Player, RTMPPlayer, SmashcastPlayer, SoundCloudPlayer, TYPE_MAP, TwitchPlayer, UstreamPlayer, VideoJSPlayer, VimeoPlayer, YouTubePlayer, codecToMimeType, genParam, sortSources,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -452,10 +452,10 @@
       console.error('sortSources() called with null source list');
       return [];
     }
-    qualities = ['1080', '720', '480', '360', '240'];
+    qualities = ['2160', '1440', '1080', '720', '540', '480', '360', '240'];
     pref = String(USEROPTS.default_quality);
     if (USEROPTS.default_quality === 'best') {
-      pref = '1080';
+      pref = '2160';
     }
     idx = qualities.indexOf(pref);
     if (idx < 0) {
@@ -526,7 +526,8 @@
             return $('<source/>').attr({
               src: source.src,
               type: source.type,
-              'data-quality': source.quality
+              res: source.quality,
+              label: source.quality + "p " + (source.type.split('/')[1])
             }).appendTo(video);
           });
           if (data.meta.gdrive_subtitles) {
@@ -546,7 +547,12 @@
           }
           _this.player = videojs(video[0], {
             autoplay: true,
-            controls: true
+            controls: true,
+            plugins: {
+              videoJsResolutionSwitcher: {
+                "default": _this.sources[0].quality
+              }
+            }
           });
           return _this.player.ready(function() {
             _this.player.on('error', function() {
@@ -679,7 +685,7 @@
     }
 
     GoogleDrivePlayer.prototype.load = function(data) {
-      if (!window.hasDriveUserscript && !data.meta.direct) {
+      if (!window.hasDriveUserscript) {
         window.promptToInstallDriveUserscript();
       } else if (window.hasDriveUserscript) {
         window.maybePromptToUpgradeUserscript();
@@ -709,8 +715,6 @@
             });
           };
         })(this), Math.random() * 1000);
-      } else {
-        return GoogleDrivePlayer.__super__.load.call(this, data);
       }
     };
 
@@ -733,6 +737,8 @@
         return 'audio/mp3';
       case 'vorbis':
         return 'audio/ogg';
+      case 'aac':
+        return 'audio/aac';
       default:
         return 'video/flv';
     }
@@ -874,7 +880,7 @@
 
     SoundCloudPlayer.prototype.setVolume = function(volume) {
       if (this.soundcloud && this.soundcloud.ready) {
-        return this.soundcloud.setVolume(volume);
+        return this.soundcloud.setVolume(volume * 100);
       }
     };
 
@@ -900,7 +906,7 @@
 
   })(Player);
 
-  DEFAULT_ERROR = 'You are currently connected via HTTPS but the embedded content uses non-secure plain HTTP.  Your browser therefore blocks it from loading due to mixed content policy.  To fix this, embed the video using a secure link if available (https://...), or load this page over plain HTTP by replacing "https://" with "http://" in the address bar (your websocket will still be secured using HTTPS, but this will permit non-secure content to load).';
+  DEFAULT_ERROR = 'You are currently connected via HTTPS but the embedded content uses non-secure plain HTTP.  Your browser therefore blocks it from loading due to mixed content policy.  To fix this, embed the video using a secure link if available (https://...), or find another source for the content.';
 
   genParam = function(name, value) {
     return $('<param/>').attr({
@@ -1252,7 +1258,8 @@
       return data.meta.direct = {
         480: [
           {
-            link: data.id
+            link: data.id,
+            contentType: 'rtmp/flv'
           }
         ]
       };
@@ -1262,29 +1269,27 @@
 
   })(VideoJSPlayer);
 
-  window.HitboxPlayer = HitboxPlayer = (function(superClass) {
-    extend(HitboxPlayer, superClass);
+  window.SmashcastPlayer = SmashcastPlayer = (function(superClass) {
+    extend(SmashcastPlayer, superClass);
 
-    function HitboxPlayer(data) {
-      if (!(this instanceof HitboxPlayer)) {
-        return new HitboxPlayer(data);
+    function SmashcastPlayer(data) {
+      if (!(this instanceof SmashcastPlayer)) {
+        return new SmashcastPlayer(data);
       }
       this.load(data);
     }
 
-    HitboxPlayer.prototype.load = function(data) {
+    SmashcastPlayer.prototype.load = function(data) {
       data.meta.embed = {
-        src: "https://www.hitbox.tv/embed/" + data.id,
+        src: "https://www.smashcast.tv/embed/" + data.id,
         tag: 'iframe'
       };
-      return HitboxPlayer.__super__.load.call(this, data);
+      return SmashcastPlayer.__super__.load.call(this, data);
     };
 
-    return HitboxPlayer;
+    return SmashcastPlayer;
 
   })(EmbedPlayer);
-
-  USTREAM_ERROR = 'Ustream.tv\'s embed player only works over plain HTTP, but you are viewing this page over secure HTTPS.  Your browser therefore blocks the ustream embed due to mixed content policy.  In order to view ustream, you must view this page over plain HTTP (change "https://" to "http://" in the address bar)-- your websocket will still be connecting using secure HTTPS.  This is something that ustream needs to fix.';
 
   window.UstreamPlayer = UstreamPlayer = (function(superClass) {
     extend(UstreamPlayer, superClass);
@@ -1299,12 +1304,10 @@
     UstreamPlayer.prototype.load = function(data) {
       data.meta.embed = {
         tag: 'iframe',
-        src: "http://www.ustream.tv/embed/" + data.id + "?v=3&wmode=direct&autoplay=1"
+        src: "/ustream_bypass/embed/" + data.id + "?html5ui&autoplay=1"
       };
       return UstreamPlayer.__super__.load.call(this, data);
     };
-
-    UstreamPlayer.prototype.mixedContentError = USTREAM_ERROR;
 
     return UstreamPlayer;
 
@@ -1483,7 +1486,7 @@
     alertBox = document.createElement('div');
     alertBox.id = 'prompt-install-drive-userscript';
     alertBox.className = 'alert alert-info';
-    alertBox.innerHTML = "Due to continual breaking changes making it increasingly difficult to\nmaintain Google Drive support, you can now install a userscript that\nsimplifies the code and has better compatibility.  In the future, the\nold player will be removed.";
+    alertBox.innerHTML = "Due to continual breaking changes making it increasingly difficult to\nmaintain Google Drive support, Google Drive now requires installing\na userscript in order to play the video.";
     alertBox.appendChild(document.createElement('br'));
     infoLink = document.createElement('a');
     infoLink.className = 'btn btn-info';
@@ -1498,7 +1501,7 @@
       return alertBox.parentNode.removeChild(alertBox);
     };
     alertBox.insertBefore(closeButton, alertBox.firstChild);
-    return document.getElementById('videowrap').appendChild(alertBox);
+    return removeOld($('<div/>').append(alertBox));
   };
 
   window.HLSPlayer = HLSPlayer = (function(superClass) {
@@ -1546,12 +1549,13 @@
     tv: TwitchPlayer,
     cu: CustomEmbedPlayer,
     rt: RTMPPlayer,
-    hb: HitboxPlayer,
+    hb: SmashcastPlayer,
     us: UstreamPlayer,
     im: ImgurPlayer,
     vm: VideoJSPlayer,
     hl: HLSPlayer,
-    sb: VideoJSPlayer
+    sb: VideoJSPlayer,
+    tc: VideoJSPlayer
   };
 
   window.loadMediaPlayer = function(data) {

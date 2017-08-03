@@ -90,7 +90,7 @@
     font-weight: bold;
 }
 
-#chatheader > p, #currenttitle {
+#chatheader > p, #videowrap-header {
     margin: 0;
 }
 
@@ -683,4 +683,12 @@ input#logout[type="submit"]:hover {
     margin-top: 5px;
     margin-left: 10px;
     margin-right: 10px;
+}
+
+#resize-video-larger, #resize-video-smaller {
+    float: right;
+}
+
+body.hd #resize-video-larger, body.hd #resize-video-smaller {
+    display: none;
 }

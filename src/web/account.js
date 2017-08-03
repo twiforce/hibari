@@ -13,6 +13,9 @@ var Config = require("../config");
 var Server = require("../server");
 var session = require("../session");
 var csrf = require("./csrf");
+const url = require("url");
+
+const LOGGER = require('@calzoneman/jsli')('database/accounts');
 
 /**
  * Handles a GET request for /account/edit
@@ -48,7 +51,7 @@ function handleAccountEdit(req, res) {
 /**
  * Handles a request to change the user"s password
  */
-function handleChangePassword(req, res) {
+async function handleChangePassword(req, res) {
     var name = req.body.name;
     var oldpassword = req.body.oldpassword;
     var newpassword = req.body.newpassword;
@@ -67,7 +70,8 @@ function handleChangePassword(req, res) {
         return;
     }
 
-    if (!req.user) {
+    const reqUser = await webserver.authorize(req);
+    if (!reqUser) {
         sendPug(res, "account-edit", {
             errorMessage: "Вы должны авторизоваться для того, чтобы изменить свой пароль."
         });
@@ -102,7 +106,6 @@ function handleChangePassword(req, res) {
                     });
                 }
 
-                res.user = user;
                 var expiration = new Date(parseInt(req.signedCookies.auth.split(":")[1]));
                 session.genSession(user, expiration, function (err, auth) {
                     if (err) {
@@ -111,20 +114,7 @@ function handleChangePassword(req, res) {
                         });
                     }
 
-                    if (req.hostname.indexOf(Config.get("http.root-domain")) >= 0) {
-                        res.cookie("auth", auth, {
-                            domain: Config.get("http.root-domain-dotted"),
-                            expires: expiration,
-                            httpOnly: true,
-                            signed: true
-                        });
-                    } else {
-                        res.cookie("auth", auth, {
-                            expires: expiration,
-                            httpOnly: true,
-                            signed: true
-                        });
-                    }
+                    webserver.setAuthCookie(req, res, expiration, auth);
 
                     sendPug(res, "account-edit", {
                         successMessage: "Пароль успешно изменён."
@@ -185,18 +175,20 @@ function handleChangeEmail(req, res) {
 /**
  * Handles a GET request for /account/channels
  */
-function handleAccountChannelPage(req, res) {
+async function handleAccountChannelPage(req, res) {
     if (webserver.redirectHttps(req, res)) {
         return;
     }
 
-    if (!req.user) {
+    const user = await webserver.authorize(req);
+    // TODO: error message
+    if (!user) {
         return sendPug(res, "account-channels", {
             channels: []
         });
     }
 
-    db.channels.listUserChannels(req.user.name, function (err, channels) {
+    db.channels.listUserChannels(user.name, function (err, channels) {
         sendPug(res, "account-channels", {
             channels: channels
         });
@@ -226,7 +218,7 @@ function handleAccountChannel(req, res) {
 /**
  * Handles a request to register a new channel
  */
-function handleNewChannel(req, res) {
+async function handleNewChannel(req, res) {
 
     var name = req.body.name;
     if (typeof name !== "string") {
@@ -234,13 +226,15 @@ function handleNewChannel(req, res) {
         return;
     }
 
-    if (!req.user) {
+    const user = await webserver.authorize(req);
+    // TODO: error message
+    if (!user) {
         return sendPug(res, "account-channels", {
             channels: []
         });
     }
 
-    db.channels.listUserChannels(req.user.name, function (err, channels) {
+    db.channels.listUserChannels(user.name, function (err, channels) {
         if (err) {
             sendPug(res, "account-channels", {
                 channels: [],
@@ -257,8 +251,8 @@ function handleNewChannel(req, res) {
             return;
         }
 
-        if (channels.length >= Config.get("max-channels-per-user") &&
-                req.user.global_rank < 255) {
+        if (channels.length >= Config.get("max-channels-per-user")
+                && user.global_rank < 255) {
             sendPug(res, "account-channels", {
                 channels: channels,
                 newChannelError: "Вам нельзя регистрировать более " +
@@ -267,9 +261,9 @@ function handleNewChannel(req, res) {
             return;
         }
 
-        db.channels.register(name, req.user.name, function (err, channel) {
+        db.channels.register(name, user.name, function (err, channel) {
             if (!err) {
-                Logger.eventlog.log("[channel] " + req.user.name + "@" +
+                Logger.eventlog.log("[channel] " + user.name + "@" +
                                     req.realIP +
                                     " registered channel " + name);
                 var sv = Server.getServer();
@@ -301,14 +295,16 @@ function handleNewChannel(req, res) {
 /**
  * Handles a request to delete a new channel
  */
-function handleDeleteChannel(req, res) {
+async function handleDeleteChannel(req, res) {
     var name = req.body.name;
     if (typeof name !== "string") {
         res.send(400);
         return;
     }
 
-    if (!req.user) {
+    const user = await webserver.authorize(req);
+    // TODO: error
+    if (!user) {
         return sendPug(res, "account-channels", {
             channels: [],
         });
@@ -324,8 +320,8 @@ function handleDeleteChannel(req, res) {
             return;
         }
 
-        if (channel.owner !== req.user.name && req.user.global_rank < 255) {
-            db.channels.listUserChannels(req.user.name, function (err2, channels) {
+        if ((!channel.owner || channel.owner.toLowerCase() !== user.name.toLowerCase()) && user.global_rank < 255) {
+            db.channels.listUserChannels(user.name, function (err2, channels) {
                 sendPug(res, "account-channels", {
                     channels: err2 ? [] : channels,
                     deleteChannelError: "У вас нет прав для удаления этой комнаты."
@@ -336,7 +332,7 @@ function handleDeleteChannel(req, res) {
 
         db.channels.drop(name, function (err) {
             if (!err) {
-                Logger.eventlog.log("[channel] " + req.user.name + "@" +
+                Logger.eventlog.log("[channel] " + user.name + "@" +
                                     req.realIP + " deleted channel " +
                                     name);
             }
@@ -353,7 +349,7 @@ function handleDeleteChannel(req, res) {
                     chan.emit("empty");
                 }
             }
-            db.channels.listUserChannels(req.user.name, function (err2, channels) {
+            db.channels.listUserChannels(user.name, function (err2, channels) {
                 sendPug(res, "account-channels", {
                     channels: err2 ? [] : channels,
                     deleteChannelError: err ? err : undefined
@@ -366,19 +362,21 @@ function handleDeleteChannel(req, res) {
 /**
  * Handles a GET request for /account/profile
  */
-function handleAccountProfilePage(req, res) {
+async function handleAccountProfilePage(req, res) {
     if (webserver.redirectHttps(req, res)) {
         return;
     }
 
-    if (!req.user) {
+    const user = await webserver.authorize(req);
+    // TODO: error message
+    if (!user) {
         return sendPug(res, "account-profile", {
             profileImage: "",
             profileText: ""
         });
     }
 
-    db.users.getProfile(req.user.name, function (err, profile) {
+    db.users.getProfile(user.name, function (err, profile) {
         if (err) {
             sendPug(res, "account-profile", {
                 profileError: err,
@@ -396,13 +394,34 @@ function handleAccountProfilePage(req, res) {
     });
 }
 
+function validateProfileImage(image, callback) {
+    var prefix = "Invalid URL for profile image: ";
+    var link = image.trim();
+    if (!link) {
+        process.nextTick(callback, null, link);
+    } else {
+        var data = url.parse(link);
+        if (!data.protocol || data.protocol !== 'https:') {
+            process.nextTick(callback,
+                    new Error(prefix + " URL must begin with 'https://'"));
+        } else if (!data.host) {
+            process.nextTick(callback,
+                    new Error(prefix + "missing hostname"));
+        } else {
+            process.nextTick(callback, null, link);
+        }
+    }
+}
+
 /**
  * Handles a POST request to edit a profile
  */
-function handleAccountProfile(req, res) {
+async function handleAccountProfile(req, res) {
     csrf.verify(req);
 
-    if (!req.user) {
+    const user = await webserver.authorize(req);
+    // TODO: error message
+    if (!user) {
         return sendPug(res, "account-profile", {
             profileImage: "",
             profileText: "",
@@ -410,23 +429,37 @@ function handleAccountProfile(req, res) {
         });
     }
 
-    var image = req.body.image;
-    var text = req.body.text;
+    var rawImage = String(req.body.image).substring(0, 255);
+    var text = String(req.body.text).substring(0, 255);
 
-    db.users.setProfile(req.user.name, { image: image, text: text }, function (err) {
-        if (err) {
-            sendPug(res, "account-profile", {
-                profileImage: "",
-                profileText: "",
-                profileError: err
+    validateProfileImage(rawImage, (error, image) => {
+        if (error) {
+            db.users.getProfile(user.name, function (err, profile) {
+                var errorMessage = err || error.message;
+                sendPug(res, "account-profile", {
+                    profileImage: profile ? profile.image : "",
+                    profileText: profile ? profile.text : "",
+                    profileError: errorMessage
+                });
             });
             return;
         }
 
-        sendPug(res, "account-profile", {
-            profileImage: image,
-            profileText: text,
-            profileError: false
+        db.users.setProfile(user.name, { image: image, text: text }, function (err) {
+            if (err) {
+                sendPug(res, "account-profile", {
+                    profileImage: "",
+                    profileText: "",
+                    profileError: err
+                });
+                return;
+            }
+
+            sendPug(res, "account-profile", {
+                profileImage: image,
+                profileText: text,
+                profileError: false
+            });
         });
     });
 }
@@ -547,7 +580,7 @@ function handlePasswordReset(req, res) {
 
             Config.get("mail.nodemailer").sendMail(mail, function (err, response) {
                 if (err) {
-                    Logger.errlog.log("mail fail: " + err);
+                    LOGGER.error("mail fail: " + err);
                     sendPug(res, "account-passwordreset", {
                         reset: false,
                         resetEmail: email,

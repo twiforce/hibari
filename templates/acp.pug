@@ -69,10 +69,12 @@ html(lang="en")
                       button#acp-gban-submit.btn.btn-danger Add ban
             #acp-user-lookup.acp-panel.col-md-12(style="display: none")
               h3 Users
-              .input-group(style="max-width: 25%")
-                input#acp-ulookup-name.form-control(type="text")
+              .input-group(style="max-width: 50%")
+                input#acp-ulookup-query.form-control(type="text")
                 span.input-group-btn
-                  button#acp-ulookup-btn.btn.btn-default Search
+                  button#acp-ulookup-btn-name.btn.btn-default(data-field="name") Search Name
+                span.input-group-btn
+                  button#acp-ulookup-btn-email.btn.btn-default(data-field="email") Search Email
               table.table.table-bordered.table-striped(style="margin-top: 20px")
                 thead
                   tr
@@ -126,11 +128,8 @@ html(lang="en")
 
     include footer
     +footer()
-    script(type="text/javascript").
-      var USEROPTS = { secure_connection: true };
     script(src=sioSource)
     script(src="/sioconfig")
     script(src="/js/util.js")
     script(src="/js/paginator.js")
-    script(src="/js/chart.js")
     script(src="/js/acp.js")

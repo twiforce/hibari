@@ -6,6 +6,7 @@ if (/^v0/.test(process.version)) {
 }
 
 try {
+    require("./lib/logger");
     var Server = require("./lib/server");
 } catch (err) {
     console.error('FATAL: Failed to require() lib/server.js');
@@ -116,6 +117,8 @@ function handleLine(line) {
             });
             Logger.eventlog.log("[acp] " + "SYSTEM" + " forced unload of " + name);
         }
+    } else if (line.indexOf("/reloadcert") === 0) {
+        sv.reloadCertificateData();
     }
 }
 
@@ -126,3 +129,13 @@ if (Config.get("service-socket.enabled")) {
     var server = new ServiceSocket;
     server.init(handleLine, Config.get("service-socket.socket"));
 }
+
+// Hi I'm Mr POSIX! Look at me!
+process.on('SIGUSR2', () => {
+    sv.reloadCertificateData();
+});
+
+require("bluebird");
+process.on("unhandledRejection", function (reason, promise) {
+    Logger.errlog.log("[SEVERE] Unhandled rejection: " + reason.stack);
+});

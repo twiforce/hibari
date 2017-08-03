@@ -40,6 +40,14 @@ Callbacks = {
         scrollChat();
     },
 
+    // Socket.IO error callback
+    error: function (msg) {
+        $("<div/>")
+            .addClass("server-msg-disconnect")
+            .text("Unable to connect: " + msg)
+            .appendTo($("#messagebuffer"));
+    },
+
     errorMsg: function(data) {
         if (data.alert) {
             alert(data.msg);
@@ -49,7 +57,6 @@ Callbacks = {
     },
 
     costanza: function (data) {
-        hidePlayer();
         $("#costanza-modal").modal("hide");
         var modal = makeModal();
         modal.attr("id", "costanza-modal")
@@ -61,15 +68,25 @@ Callbacks = {
             .appendTo(body);
 
         $("<strong/>").text(data.msg).appendTo(body);
-        hidePlayer();
         modal.modal();
     },
 
     announcement: function(data) {
+        // Suppress this announcement for people who have already closed it
+        if (data.id && CyTube.ui.suppressedAnnouncementId
+                && data.id === CyTube.ui.suppressedAnnouncementId) {
+            return;
+        }
         $("#announcements").html("");
         var signature = "<br>\u2014" + data.from;
         var announcement = makeAlert(data.title, data.text + signature)
             .appendTo($("#announcements"));
+        if (data.id) {
+            announcement.find(".close").click(function suppressThisAnnouncement() {
+                CyTube.ui.suppressedAnnouncementId = data.id;
+                setOpt("suppressed_announcement_id", data.id);
+            });
+        }
     },
 
     kick: function(data) {
@@ -427,23 +444,6 @@ Callbacks = {
 
             if (!CLIENT.guest) {
                 socket.emit("initUserPLCallbacks");
-                if ($("#loginform").length === 0) {
-                    return;
-                }
-                var logoutform = $("<p/>").attr("id", "logoutform")
-                    .addClass("navbar-text pull-right")
-                    .insertAfter($("#loginform"));
-
-                $("<span/>").attr("id", "welcome").text("Привет, " + CLIENT.name + "!")
-                    .appendTo(logoutform);
-                $("<span/>").html("&nbsp;&middot;&nbsp;").appendTo(logoutform);
-                var domain = $("#loginform").attr("action").replace("/login", "");
-                $("<a/>").attr("id", "logout")
-                    .attr("href", domain + "/logout?redirect=/r/" + CHANNEL.name)
-                    .text("Logout")
-                    .appendTo(logoutform);
-
-                $("#loginform").remove();
             }
         }
     },
@@ -506,13 +506,12 @@ Callbacks = {
         div.data("leader", Boolean(data.leader));
         div.data("profile", data.profile);
         div.data("meta", data.meta);
-        div.data("afk", data.meta.afk);
         if (data.meta.muted || data.meta.smuted) {
             div.data("icon", "glyphicon-volume-off");
         } else {
             div.data("icon", false);
         }
-        formatUserlistItem(div, data);
+        formatUserlistItem(div);
         addUserDropdown(div, data);
         div.appendTo($("#userlist"));
         sortUserlist();
@@ -531,9 +530,22 @@ Callbacks = {
             user.data("icon", false);
         }
 
+        /*
+         * 2017-06-15
+         * TODO: Remove this and the empty function below
+         *         after script authors have had ample time to update
+         */
+        socket.listeners('setAFK').forEach(function(listener){
+            listener({ name: data.name, afk: data.meta.afk });
+        });
+
         formatUserlistItem(user, data);
         addUserDropdown(user, data);
         sortUserlist();
+    },
+
+    setAFK: function() {
+        return true;
     },
 
     setUserProfile: function (data) {
@@ -624,16 +636,6 @@ Callbacks = {
 
         user.data("icon", data.icon);
         formatUserlistItem(user);
-    },
-
-    setAFK: function (data) {
-        var user = findUserlistItem(data.name);
-        if(user === null)
-            return;
-        user.data("afk", data.afk);
-        formatUserlistItem(user);
-        if(USEROPTS.sort_afk)
-            sortUserlist();
     },
 
     userLeave: function(data) {
@@ -892,8 +894,8 @@ Callbacks = {
 
             generator: function (item, page, index) {
                 var li = makeSearchEntry(item, false);
-                if(hasPermission("playlistadd")) {
-                    addLibraryButtons(li, item.id, data.source);
+                if(hasPermission("playlistadd") || hasPermission("deletefromchannellib")) {
+                    addLibraryButtons(li, item, data.source);
                 }
                 $(li).appendTo($("#library"));
             },
@@ -996,9 +998,74 @@ Callbacks = {
                 break;
             }
         }
+        for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+            if (CHANNEL.badEmotes[i].name === data.name) {
+                CHANNEL.badEmotes[i] = data;
+                break;
+            }
+        }
 
         if (!found) {
             CHANNEL.emotes.push(data);
+            if (/\s/g.test(data.name)) {
+                CHANNEL.badEmotes.push(data);
+            } else {
+                CHANNEL.emoteMap[data.name] = data;
+            }
+        } else {
+            CHANNEL.emoteMap[data.name] = data;
+        }
+
+        EMOTELIST.handleChange();
+        CSEMOTELIST.handleChange();
+    },
+
+    renameEmote: function (data) {
+        var badBefore = /\s/g.test(data.old);
+        var badAfter = /\s/g.test(data.name);
+        var oldName = data.old;
+        delete data.old;
+
+        data.regex = new RegExp(data.source, "gi");
+
+        for (var i = 0; i < CHANNEL.emotes.length; i++) {
+            if (CHANNEL.emotes[i].name === oldName) {
+                CHANNEL.emotes[i] = data;
+                break;
+            }
+        }
+
+        // Now bad
+        if(badAfter){
+            // But wasn't bad before: Add it to bad list
+            if(!badBefore){
+                CHANNEL.badEmotes.push(data);
+                delete CHANNEL.emoteMap[oldName];
+            }
+            // Was bad before too: Update
+            else {
+                for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+                    if (CHANNEL.badEmotes[i].name === oldName) {
+                        CHANNEL.badEmotes[i] = data;
+                        break;
+                    }
+                }
+            }
+        }
+        // Not bad now
+        else {
+            // But was bad before: Drop from list
+            if(badBefore){
+                for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+                    if (CHANNEL.badEmotes[i].name === oldName) {
+                        CHANNEL.badEmotes.splice(i, 1);
+                        break;
+                    }
+                }
+            } else {
+                delete CHANNEL.emoteMap[oldName];
+            }
+            CHANNEL.emoteMap[data.name] = data;
         }
 
         EMOTELIST.handleChange();
@@ -1018,6 +1085,13 @@ Callbacks = {
             var row = $("code:contains('" + data.name + "')").parent().parent();
             row.hide("fade", row.remove.bind(row));
             CHANNEL.emotes.splice(i, 1);
+            delete CHANNEL.emoteMap[data.name];
+            for (var i = 0; i < CHANNEL.badEmotes.length; i++) {
+                if (CHANNEL.badEmotes[i].name === data.name) {
+                    CHANNEL.badEmotes.splice(i, 1);
+                    break;
+                }
+            }
         }
     },
 
@@ -1049,6 +1123,44 @@ Callbacks = {
         HAS_CONNECTED_BEFORE = false;
         ioServerConnect(socketConfig);
         setupCallbacks();
+    },
+
+    validationError: function (error) {
+        var target = $(error.target);
+        target.parent().find(".text-danger").remove();
+
+        var formGroup = target.parent();
+        while (!formGroup.hasClass("form-group") && formGroup.length > 0) {
+            formGroup = formGroup.parent();
+        }
+
+        if (formGroup.length > 0) {
+            formGroup.addClass("has-error");
+        }
+
+        $("<p/>").addClass("text-danger")
+                .text(error.message)
+                .insertAfter(target);
+    },
+
+    validationPassed: function (data) {
+        var target = $(data.target);
+        target.parent().find(".text-danger").remove();
+
+        var formGroup = target.parent();
+        while (!formGroup.hasClass("form-group") && formGroup.length > 0) {
+            formGroup = formGroup.parent();
+        }
+
+        if (formGroup.length > 0) {
+            formGroup.removeClass("has-error");
+        }
+    },
+
+    clearVoteskipVote: function () {
+        if (CHANNEL.opts.allow_voteskip && hasPermission("voteskip")) {
+            $("#voteskip").attr("disabled", false);
+        }
     }
 }
 

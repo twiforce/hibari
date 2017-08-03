@@ -70,6 +70,14 @@ const SETTINGS = {
     allowedAttributes: ATTRIBUTE_MAP
 };
 
+function looseSanitizeText(str) {
+    str = str.replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    return str;
+}
+
 function sanitizeText(str) {
     str = str.replace(/&/g, "&amp;")
              .replace(/</g, "&lt;")
@@ -95,9 +103,11 @@ function decodeText(str) {
     return str;
 }
 
-module.exports.sanitizeHTML = function (html) {
-    return sanitizeHTML(html, SETTINGS);
+module.exports.sanitizeHTML = function (html, extraSettings = {}) {
+    const options = Object.assign({}, SETTINGS, extraSettings);
+    return sanitizeHTML(html, options);
 };
 
+module.exports.looseSanitizeText = looseSanitizeText;
 module.exports.sanitizeText = sanitizeText;
 module.exports.decodeText = decodeText;

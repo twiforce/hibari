@@ -34,7 +34,6 @@ addMenuItem("#acp-user-lookup", "Users");
 addMenuItem("#acp-channel-lookup", "Channels");
 addMenuItem("#acp-loaded-channels", "Active Channels");
 addMenuItem("#acp-eventlog", "Event Log");
-addMenuItem("#acp-stats", "Stats");
 
 /* Log Viewer */
 function readSyslog() {
@@ -135,7 +134,7 @@ socket.on("acp-gbanlist", function (bans) {
 /* User listing */
 (function () {
     var doSearch = function () {
-        if ($("#acp-ulookup-name").val().trim() === "") {
+        if ($("#acp-ulookup-query").val().trim() === "") {
             if (!confirm("You are about to list the entire users table. " +
                          "This table might be very large and take a long " +
                          "time to query.  Continue?")) {
@@ -143,14 +142,16 @@ socket.on("acp-gbanlist", function (bans) {
             }
         }
         socket.emit("acp-list-users", {
-            name: $("#acp-ulookup-name").val()
+            value: $("#acp-ulookup-query").val(),
+            field: $(this).data()["field"]
         });
     };
 
-    $("#acp-ulookup-btn").click(doSearch);
-    $("#acp-ulookup-name").keyup(function (ev) {
+    $("#acp-ulookup-btn-name").click(doSearch);
+    $("#acp-ulookup-btn-email").click(doSearch);
+    $("#acp-ulookup-query").keyup(function (ev) {
         if (ev.keyCode === 13) {
-            doSearch();
+            $("#acp-ulookup-btn-name").click();
         }
     });
 })();
@@ -228,6 +229,20 @@ socket.on("acp-list-users", function (users) {
                     socket.emit("acp-reset-password", {
                         name: u.name,
                         email: u.email
+                    }, function (result) {
+                        if (result.error) {
+                            modalAlert({
+                                title: "Error",
+                                textContent: result.error
+                            });
+                        } else {
+                            var link = new URL("/account/passwordrecover/" + result.hash,
+                                    new URL(location));
+                            modalAlert({
+                                title: "Reset Link",
+                                textContent: link
+                            });
+                        }
                     });
                 }).appendTo(reset);
         }
@@ -451,8 +466,8 @@ console.log(channels[0]);
     channels.forEach(function (c) {
         var tr = $("<tr/>").appendTo(tbl);
         var name = $("<td/>").appendTo(tr);
-        $("<a/>").attr("href", "/r/" + c.name)
-            .text(c.pagetitle + " (/r/" + c.name + ")")
+        $("<a/>").attr("href", `/${CHANNELPATH}/${c.name}`)
+            .text(c.pagetitle + ` (/${CHANNELPATH}/${c.name})`)
             .appendTo(name);
         var usercount = $("<td/>").text(c.usercount).appendTo(tr);
         count += c.usercount;
@@ -473,7 +488,7 @@ console.log(channels[0]);
             .attr("title", "Unload")
             .appendTo(controlInner)
             .click(function () {
-                if (confirm("Are you sure you want to unload /r/" + c.name + "?")) {
+                if (confirm(`Are you sure you want to unload /${CHANNELPATH}/${c.name}?`)) {
                     socket.emit("acp-force-unload", {
                         name: c.name
                     });
@@ -538,79 +553,6 @@ function filterEventLog() {
 
 $("#acp-eventlog-filter").change(filterEventLog);
 $("#acp-eventlog-refresh").click(readEventlog);
-
-/* Stats */
-
-$("a:contains('Stats')").click(function () {
-    socket.emit("acp-list-stats");
-});
-
-socket.on("acp-list-stats", function (rows) {
-    var labels = [];
-    var ucounts = [];
-    var ccounts = [];
-    var mcounts = [];
-    var lastdate = "";
-    rows.forEach(function (r) {
-        var d = new Date(parseInt(r.time));
-        var t = "";
-        if (d.toDateString() !== lastdate) {
-            lastdate = d.toDateString();
-            t = d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();
-            t += " " + d.toTimeString().split(" ")[0];
-        } else {
-            t = d.toTimeString().split(" ")[0];
-        }
-
-        labels.push(t);
-        ucounts.push(r.usercount);
-        ccounts.push(r.chancount);
-        mcounts.push(r.mem / 1048576);
-    });
-
-    var userdata = {
-        labels: labels,
-        datasets: [
-            {
-                fillColor: "rgba(151, 187, 205, 0.5)",
-                strokeColor: "rgba(151, 187, 205, 1)",
-                pointColor: "rgba(151, 187, 205, 1)",
-                pointStrokeColor: "#fff",
-                data: ucounts
-            }
-        ]
-    };
-
-    var channeldata = {
-        labels: labels,
-        datasets: [
-            {
-                fillColor: "rgba(151, 187, 205, 0.5)",
-                strokeColor: "rgba(151, 187, 205, 1)",
-                pointColor: "rgba(151, 187, 205, 1)",
-                pointStrokeColor: "#fff",
-                data: ccounts
-            }
-        ]
-    };
-
-    var memdata = {
-        labels: labels,
-        datasets: [
-            {
-                fillColor: "rgba(151, 187, 205, 0.5)",
-                strokeColor: "rgba(151, 187, 205, 1)",
-                pointColor: "rgba(151, 187, 205, 1)",
-                pointStrokeColor: "#fff",
-                data: mcounts
-            }
-        ]
-    };
-    
-    new Chart($("#stat_users")[0].getContext("2d")).Line(userdata);
-    new Chart($("#stat_channels")[0].getContext("2d")).Line(channeldata);
-    new Chart($("#stat_mem")[0].getContext("2d")).Line(memdata);
-});
 
 /* Initialize keyed table sorts */
 $("table").each(function () {

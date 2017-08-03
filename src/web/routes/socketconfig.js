@@ -1,7 +1,7 @@
-import Config from '../../config';
 import CyTubeUtil from '../../utilities';
-import Logger from '../../logger';
 import * as HTTPStatus from '../httpstatus';
+
+const LOGGER = require('@calzoneman/jsli')('web/routes/socketconfig');
 
 export default function initialize(app, clusterClient) {
     app.get('/socketconfig/:channel.json', (req, res) => {
@@ -14,7 +14,7 @@ export default function initialize(app, clusterClient) {
         clusterClient.getSocketConfig(req.params.channel).then(config => {
             res.json(config);
         }).catch(err => {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
             return res.status(500).json({
                 error: err.message
             });

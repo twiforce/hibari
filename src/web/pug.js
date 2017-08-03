@@ -16,7 +16,8 @@ function merge(locals, res) {
         loginDomain: Config.get("https.enabled") ? Config.get("https.full-address")
                                                  : Config.get("http.full-address"),
         csrfToken: typeof res.req.csrfToken === 'function' ? res.req.csrfToken() : '',
-        baseUrl: getBaseUrl(res)
+        baseUrl: getBaseUrl(res),
+        channelPath: Config.get("channel-path"),
     };
     if (typeof locals !== "object") {
         return _locals;
@@ -39,9 +40,10 @@ function sendPug(res, view, locals) {
     if (!locals) {
         locals = {};
     }
-    locals.loggedIn = locals.loggedIn || !!res.user;
-    locals.loginName = locals.loginName || res.user ? res.user.name : false;
-    locals.superadmin = locals.superadmin || res.user ? res.user.global_rank >= 255 : false;
+    locals.loggedIn = nvl(locals.loggedIn, res.locals.loggedIn);
+    locals.loginName = nvl(locals.loginName, res.locals.loginName);
+    locals.superadmin = nvl(locals.superadmin, res.locals.superadmin);
+
     if (!(view in cache) || Config.get("debug")) {
         var file = path.join(templates, view + ".pug");
         var fn = pug.compile(fs.readFileSync(file), {
@@ -52,6 +54,11 @@ function sendPug(res, view, locals) {
     }
     var html = cache[view](merge(locals, res));
     res.send(html);
+}
+
+function nvl(a, b) {
+    if (typeof a === 'undefined') return b;
+    return a;
 }
 
 module.exports = {

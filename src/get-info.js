@@ -1,10 +1,8 @@
 var http = require("http");
 var https = require("https");
 var cheerio = require('cheerio');
-var Logger = require("./logger.js");
 var Media = require("./media");
 var CustomEmbedFilter = require("./customembed").filter;
-var Server = require("./server");
 var Config = require("./config");
 var ffmpeg = require("./ffmpeg");
 var mediaquery = require("cytube-mediaquery");
@@ -14,36 +12,20 @@ var Vidme = require("cytube-mediaquery/lib/provider/vidme");
 var Streamable = require("cytube-mediaquery/lib/provider/streamable");
 var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
 var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
+var TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
+import { Counter } from 'prom-client';
 
-/*
- * Preference map of quality => youtube formats.
- * see https://en.wikipedia.org/wiki/Youtube#Quality_and_codecs
- *
- * Prefer WebM over MP4, ignore other codecs (e.g. FLV)
- */
-const GOOGLE_PREFERENCE = {
-    "hd1080": [37, 46],
-    "hd720": [22, 45],
-    "large": [59, 44],
-    "medium": [18, 43, 34] // 34 is 360p FLV as a last-ditch
-};
-
-const CONTENT_TYPES = {
-    43: "webm",
-    44: "webm",
-    45: "webm",
-    46: "webm",
-    18: "mp4",
-    22: "mp4",
-    37: "mp4",
-    59: "mp4",
-    34: "flv"
-};
+const LOGGER = require('@calzoneman/jsli')('get-info');
+const lookupCounter = new Counter({
+    name: 'cytube_media_lookup_count',
+    help: 'Count of media lookups',
+    labelNames: ['shortCode']
+});
 
 var urlRetrieve = function (transport, options, callback) {
     var req = transport.request(options, function (res) {
         res.on("error", function (err) {
-            Logger.errlog.log("HTTP response " + options.host + options.path + " failed: "+
+            LOGGER.error("HTTP response " + options.host + options.path + " failed: "+
                 err);
             callback(503, "");
         });
@@ -59,7 +41,7 @@ var urlRetrieve = function (transport, options, callback) {
     });
 
     req.on("error", function (err) {
-        Logger.errlog.log("HTTP request " + options.host + options.path + " failed: " +
+        LOGGER.error("HTTP request " + options.host + options.path + " failed: " +
             err);
         callback(503, "");
     });
@@ -159,59 +141,11 @@ var Getters = {
             return;
         }
 
-        if (Config.get("vimeo-oauth.enabled")) {
-            return Getters.vi_oauth(id, callback);
-        }
-
         Vimeo.lookup(id).then(video => {
             video = new Media(video.id, video.title, video.duration, "vi");
             callback(null, video);
         }).catch(error => {
             callback(error.message);
-        });
-    },
-
-    vi_oauth: function (id, callback) {
-        var OAuth = require("oauth");
-        var oa = new OAuth.OAuth(
-            "https://vimeo.com/oauth/request_token",
-            "https://vimeo.com/oauth/access_token",
-            Config.get("vimeo-oauth.consumer-key"),
-            Config.get("vimeo-oauth.secret"),
-            "1.0",
-            null,
-            "HMAC-SHA1"
-        );
-
-        oa.get("https://vimeo.com/api/rest/v2?format=json" +
-               "&method=vimeo.videos.getInfo&video_id=" + id,
-            null,
-            null,
-        function (err, data, res) {
-            if (err) {
-                return callback(err, null);
-            }
-
-            try {
-                data = JSON.parse(data);
-
-                if (data.stat !== "ok") {
-                    return callback(data.err.msg, null);
-                }
-
-                var video = data.video[0];
-
-                if (video.embed_privacy !== "anywhere") {
-                    return callback("Embedding disabled", null);
-                }
-
-                var id = video.id;
-                var seconds = parseInt(video.duration);
-                var title = video.title;
-                callback(null, new Media(id, title, seconds, "vi"));
-            } catch (e) {
-                callback("Error handling Vimeo response", null);
-            }
         });
     },
 
@@ -415,6 +349,25 @@ var Getters = {
         });
     },
 
+    /* twitch clip */
+    tc: function (id, callback) {
+        var m = id.match(/^([A-Za-z]+)$/);
+        if (m) {
+            id = m[1];
+        } else {
+            process.nextTick(callback, "Invalid Twitch VOD ID");
+            return;
+        }
+
+        TwitchClip.lookup(id).then(video => {
+            const media = new Media(video.id, video.title, video.duration,
+                                    "tc", video.meta);
+            process.nextTick(callback, false, media);
+        }).catch(function (err) {
+            callback(err.message || err, null);
+        });
+    },
+
     /* ustream.tv */
     us: function (id, callback) {
         /**
@@ -465,13 +418,6 @@ var Getters = {
         });
     },
 
-    /* JWPlayer */
-    jw: function (id, callback) {
-        var title = "JWPlayer - " + id;
-        var media = new Media(id, title, "--:--", "jw");
-        callback(false, media);
-    },
-
     /* rtmp stream */
     rt: function (id, callback) {
         var title = "Livestream";
@@ -512,7 +458,7 @@ var Getters = {
             if (/invalid embed/i.test(e.message)) {
                 return callback(e.message);
             } else {
-                Logger.errlog.log(e.stack);
+                LOGGER.error(e.stack);
                 return callback("Unknown error processing embed");
             }
         }
@@ -521,24 +467,8 @@ var Getters = {
 
     /* google docs */
     gd: function (id, callback) {
-        GoogleDrive.setHTML5HackEnabled(Config.get("google-drive.html5-hack-enabled"));
         var data = {
             type: "googledrive",
-            kind: "single",
-            id: id
-        };
-
-        mediaquery.lookup(data).then(function (video) {
-            callback(null, convertMedia(video));
-        }).catch(function (err) {
-            callback(err.message || err);
-        });
-    },
-
-    /* Google+ videos */
-    gp: function (id, callback) {
-        var data = {
-            type: "google+",
             kind: "single",
             id: id
         };
@@ -565,7 +495,7 @@ var Getters = {
         });
     },
 
-    /* hitbox.tv */
+    /* hitbox.tv / smashcast.tv */
     hb: function (id, callback) {
         var m = id.match(/([\w-]+)/);
         if (m) {
@@ -574,7 +504,7 @@ var Getters = {
             callback("Invalid ID", null);
             return;
         }
-        var title = "Hitbox.tv - " + id;
+        var title = "Smashcast - " + id;
         var media = new Media(id, title, "--:--", "hb");
         callback(false, media);
     },
@@ -616,6 +546,8 @@ module.exports = {
     Getters: Getters,
     getMedia: function (id, type, callback) {
         if(type in this.Getters) {
+            LOGGER.info("Looking up %s:%s", type, id);
+            lookupCounter.labels(type).inc();
             this.Getters[type](id, callback);
         } else {
             callback("Unknown media type '" + type + "'", null);

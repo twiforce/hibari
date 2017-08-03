@@ -111,79 +111,53 @@ $("#guestname").keydown(function (ev) {
     }
 });
 
+
+CyTube.chatTabCompleteData = {
+    context: {}
+};
+
 function chatTabComplete() {
-    var words = $("#chatline").val().split(" ");
-    var current = words[words.length - 1].toLowerCase();
-    if (!current.match(/([\w-]{1,20}$|[а-яА-Я_-]{1,20}$)/)) {
+    if (!CyTube.tabCompleteMethods) {
+        console.error('Missing CyTube.tabCompleteMethods!');
         return;
     }
-
-    var __slice = Array.prototype.slice;
-    var usersWithCap = __slice.call($("#userlist").children()).map(function (elem) {
-        return elem.children[1].innerHTML;
-    });
-    var users = __slice.call(usersWithCap).map(function (user) {
-        return user.toLowerCase();
-    }).filter(function (name) {
-        return name.indexOf(current) === 0;
-    });
-
-    // users now contains a list of names that start with current word
-
-    if (users.length === 0) {
+    var chatline = document.getElementById("chatline");
+    var currentText = chatline.value;
+    var currentPosition = chatline.selectionEnd;
+    if (typeof currentPosition !== 'number' || !chatline.setSelectionRange) {
+        // Bail, we're on IE8 or something similarly dysfunctional
         return;
     }
+    var firstWord = !/\s/.test(currentText.trim());
+    var options = [];
+    var userlistElems = document.getElementById("userlist").children;
+    for (var i = 0; i < userlistElems.length; i++) {
+        var username = userlistElems[i].children[1].textContent;
+        if (firstWord) {
+            username += ':';
+        }
+        options.push(username);
+    }
 
-    // trim possible names to the shortest possible completion
-    var min = Math.min.apply(Math, users.map(function (name) {
-        return name.length;
-    }));
-    users = users.map(function (name) {
-        return name.substring(0, min);
+    CHANNEL.emotes.forEach(function (emote) {
+        options.push(emote.name);
     });
 
-    // continually trim off letters until all prefixes are the same
-    var changed = true;
-    var iter = 21;
-    while (changed) {
-        changed = false;
-        var first = users[0];
-        for (var i = 1; i < users.length; i++) {
-            if (users[i] !== first) {
-                changed = true;
-                break;
-            }
-        }
-
-        if (changed) {
-            users = users.map(function (name) {
-                return name.substring(0, name.length - 1);
-            });
-        }
-
-        // In the event something above doesn't generate a break condition, limit
-        // the maximum number of repetitions
-        if (--iter < 0) {
-            break;
-        }
+    var method = USEROPTS.chat_tab_method;
+    if (!CyTube.tabCompleteMethods[method]) {
+        console.error("Unknown chat tab completion method '" + method + "', using default");
+        method = "Cycle options";
     }
 
-    current = users[0].substring(0, min);
-    for (var i = 0; i < usersWithCap.length; i++) {
-        if (usersWithCap[i].toLowerCase() === current) {
-            current = usersWithCap[i];
-            break;
-        }
-    }
+    var result = CyTube.tabCompleteMethods[method](
+            currentText,
+            currentPosition,
+            options,
+            CyTube.chatTabCompleteData.context
+    );
 
-    if (users.length === 1) {
-        if (words.length === 1) {
-            current += ":";
-        }
-        current += " ";
-    }
-    words[words.length - 1] = current;
-    $("#chatline").val(words.join(" "));
+    chatline.value = result.text;
+    chatline.setSelectionRange(result.newPosition, result.newPosition);
 }
 
 $("#chatline").keydown(function(ev) {
@@ -218,7 +192,11 @@ $("#chatline").keydown(function(ev) {
         return;
     }
     else if(ev.keyCode == 9) { // Tab completion
-        chatTabComplete();
+        try {
+            chatTabComplete();
+        } catch (error) {
+            console.error(error);
+        }
         ev.preventDefault();
         return false;
     }
@@ -459,7 +437,7 @@ $("#mediaurl").keyup(function(ev) {
         queue("end", "url");
     } else {
         var url = $("#mediaurl").val().split("?")[0];
-        if (url.match(/^https?:\/\/(.*)?\.(flv|mp4|og[gv]|webm|mp3|mov)$/) ||
+        if (url.match(/^https:\/\/(.*)?\.(flv|mp4|og[gv]|webm|mp3|mov|m4a)$/) ||
                 url.match(/^fi:/)) {
             var title = $("#addfromurl-title");
             if (title.length === 0) {
@@ -501,7 +479,6 @@ $("#voteskip").click(function() {
 
 $("#getplaylist").click(function() {
     var callback = function(data) {
-        hidePlayer();
         var idx = socket.listeners("errorMsg").indexOf(errCallback);
         if (idx >= 0) {
             socket.listeners("errorMsg").splice(idx);
@@ -536,7 +513,6 @@ $("#getplaylist").click(function() {
         $("<div/>").addClass("modal-footer").appendTo(modal);
         outer.on("hidden.bs.modal", function() {
             outer.remove();
-            unhidePlayer();
         });
         outer.modal();
     };
@@ -573,17 +549,6 @@ $("#shuffleplaylist").click(function() {
         socket.emit("shufflePlaylist");
     }
 });
-
-/* load channel */
-
-var loc = document.location+"";
-var m = loc.match(/\/r\/([a-zA-Z0-9-_]+)/);
-if(m) {
-    CHANNEL.name = m[1];
-    if (CHANNEL.name.indexOf("#") !== -1) {
-        CHANNEL.name = CHANNEL.name.substring(0, CHANNEL.name.indexOf("#"));
-    }
-}
 
 /* channel ranks stuff */
 function chanrankSubmit(rank) {
@@ -880,7 +845,6 @@ applyOpts();
 })();
 
 var EMOTELISTMODAL = $("#emotelist");
-EMOTELISTMODAL.on("hidden.bs.modal", unhidePlayer);
 $("#emotelistbtn").click(function () {
     EMOTELISTMODAL.modal();
 });
@@ -925,3 +889,19 @@ $("#cs-csstext").bind("input", handleCSSJSTooLarge.bind($("#cs-csstext")[0],
         "#cs-csstext-too-big"));
 $("#cs-jstext").bind("input", handleCSSJSTooLarge.bind($("#cs-jstext")[0],
         "#cs-jstext-too-big"));
+
+$("#resize-video-larger").click(function () {
+    try {
+        CyTube.ui.changeVideoWidth(1);
+    } catch (error) {
+        console.error(error);
+    }
+});
+
+$("#resize-video-smaller").click(function () {
+    try {
+        CyTube.ui.changeVideoWidth(-1);
+    } catch (error) {
+        console.error(error);
+    }
+});

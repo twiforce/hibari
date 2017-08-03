@@ -6,6 +6,8 @@ var util = require("../utilities");
 var Flags = require("../flags");
 var url = require("url");
 var counters = require("../counters");
+import { transformImgTags } from '../camo';
+import { Counter } from 'prom-client';
 
 const SHADOW_TAG = "[shadow]";
 const LINK = /(\w+:\/\/(?:[^:\/\[\]\s]+|\[[0-9a-f:]+\])(?::\d+)?(?:\/[^\/\s]*)*)/ig;
@@ -121,6 +123,12 @@ ChatModule.prototype.shadowMutedUsers = function () {
     });
 };
 
+ChatModule.prototype.anonymousUsers = function () {
+    return this.channel.users.filter(function (u) {
+        return u.getName() === "";
+    });
+};
+
 ChatModule.prototype.restrictNewAccount = function restrictNewAccount(user, data) {
     if (user.account.effectiveRank < 2 && this.channel.modules.options) {
         const firstSeen = user.getFirstSeenTime();
@@ -142,9 +150,14 @@ ChatModule.prototype.restrictNewAccount = function restrictNewAccount(user, data
     return false;
 };
 
+const chatIncomingCount = new Counter({
+    name: 'cytube_chat_incoming_count',
+    help: 'Number of incoming chatMsg frames'
+});
 ChatModule.prototype.handleChatMsg = function (user, data) {
     var self = this;
     counters.add("chat:incoming");
+    chatIncomingCount.inc();
 
     if (!this.channel || !this.channel.modules.permissions.canChat(user)) {
         return;
@@ -274,6 +287,10 @@ ChatModule.prototype.handlePm = function (user, data) {
     user.socket.emit("pm", msgobj);
 };
 
+const chatSentCount = new Counter({
+    name: 'cytube_chat_sent_count',
+    help: 'Number of broadcast chat messages'
+});
 ChatModule.prototype.processChatMsg = function (user, data) {
     if (data.msg.match(Config.get("link-domain-blacklist-regex"))) {
         this.channel.logger.log(user.displayip + " (" + user.getName() + ") was kicked for " +
@@ -325,6 +342,10 @@ ChatModule.prototype.processChatMsg = function (user, data) {
         this.shadowMutedUsers().forEach(function (u) {
             u.socket.emit("chatMsg", msgobj);
         });
+        // This prevents shadowmuted users from easily detecting their state
+        this.anonymousUsers().forEach(function (u) {
+            u.socket.emit("chatMsg", msgobj);
+        });
         msgobj.meta.shadow = true;
         this.channel.moderators().forEach(function (u) {
             u.socket.emit("chatMsg", msgobj);
@@ -339,6 +360,7 @@ ChatModule.prototype.processChatMsg = function (user, data) {
     }
     this.sendMessage(msgobj);
     counters.add("chat:sent");
+    chatSentCount.inc();
 };
 
 ChatModule.prototype.formatMessage = function (username, data) {
@@ -381,7 +403,17 @@ ChatModule.prototype.filterMessage = function (msg) {
         }
     });
 
-    return XSS.sanitizeHTML(result);
+    let settings = {};
+    const camoConfig = Config.getCamoConfig();
+    if (camoConfig.isEnabled()) {
+        settings = {
+            transformTags: {
+                img: transformImgTags.bind(null, camoConfig)
+            }
+        };
+    }
+
+    return XSS.sanitizeHTML(result, settings);
 };
 
 ChatModule.prototype.sendModMessage = function (msg, minrank) {
@@ -461,7 +493,8 @@ ChatModule.prototype.handleCmdClear = function (user, msg, meta) {
     }
 
     this.buffer = [];
-    this.channel.broadcastAll("clearchat");
+    this.channel.broadcastAll("clearchat", { clearedBy: user.getName() });
+    this.sendModMessage(user.getName() + " cleared chat.", -1);
     this.channel.logger.log("[mod] " + user.getName() + " used /clear");
 };
 

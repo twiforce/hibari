@@ -2,10 +2,11 @@ var db = require("../database");
 var valid = require("../utilities").isValidChannelName;
 var fs = require("fs");
 var path = require("path");
-var Logger = require("../logger");
 var tables = require("./tables");
 var Flags = require("../flags");
 var util = require("../utilities");
+
+const LOGGER = require('@calzoneman/jsli')('database/channels');
 
 var blackHole = function () { };
 
@@ -147,8 +148,8 @@ module.exports = {
             }
 
             db.query("INSERT INTO `channels` " +
-                     "(`name`, `owner`, `time`) VALUES (?, ?, ?)",
-                     [name, owner, Date.now()],
+                     "(`name`, `owner`, `time`, `last_loaded`) VALUES (?, ?, ?, ?)",
+                     [name, owner, Date.now(), new Date()],
                      function (err, res) {
                 if (err) {
                     callback(err, null);
@@ -193,27 +194,27 @@ module.exports = {
 
             module.exports.deleteBans(name, function (err) {
                 if (err) {
-                    Logger.errlog.log("Failed to delete bans for " + name + ": " + err);
+                    LOGGER.error("Failed to delete bans for " + name + ": " + err);
                 }
             });
 
             module.exports.deleteLibrary(name, function (err) {
                 if (err) {
-                    Logger.errlog.log("Failed to delete library for " + name + ": " + err);
+                    LOGGER.error("Failed to delete library for " + name + ": " + err);
                 }
             });
 
             module.exports.deleteAllRanks(name, function (err) {
                 if (err) {
-                    Logger.errlog.log("Failed to delete ranks for " + name + ": " + err);
+                    LOGGER.error("Failed to delete ranks for " + name + ": " + err);
                 }
             });
 
             fs.unlink(path.join(__dirname, "..", "..", "chandump", name),
                       function (err) {
                 if (err && err.code !== "ENOENT") {
-                    Logger.errlog.log("Deleting chandump failed:");
-                    Logger.errlog.log(err);
+                    LOGGER.error("Deleting chandump failed:");
+                    LOGGER.error(err);
                 }
             });
 
@@ -274,6 +275,7 @@ module.exports = {
             chan.name = res[0].name;
             chan.uniqueName = chan.name.toLowerCase();
             chan.id = res[0].id;
+            chan.ownerName = typeof res[0].owner === 'string' ? res[0].owner.toLowerCase() : null;
             chan.setFlag(Flags.C_REGISTERED);
             chan.logger.log("[init] Loaded channel from database");
             callback(null, true);
@@ -376,7 +378,7 @@ module.exports = {
 
         db.query("INSERT INTO `channel_ranks` VALUES (?, ?, ?) " +
                  "ON DUPLICATE KEY UPDATE rank=?",
-                 [name, rank, chan, rank, chan], callback);
+                 [name, rank, chan, rank], callback);
     },
 
     /**
@@ -429,7 +431,8 @@ module.exports = {
             bitrate: media.meta.bitrate,
             codec: media.meta.codec,
             scuri: media.meta.scuri,
-            embed: media.meta.embed
+            embed: media.meta.embed,
+            direct: media.meta.direct
         });
 
         db.query("INSERT INTO `channel_libraries` " +
@@ -572,6 +575,29 @@ module.exports = {
     },
 
     /**
+     * Check if a user's name or IP is banned
+     */
+    isBanned: function (chan, ip, name, callback) {
+        if (typeof callback !== "function") {
+            return;
+        }
+
+        if (!valid(chan)) {
+            callback("Invalid channel name", null);
+            return;
+        }
+
+        var range = util.getIPRange(ip);
+        var wrange = util.getWideIPRange(ip);
+
+        db.query("SELECT COUNT(1) AS count FROM `channel_bans` WHERE (ip IN (?, ?, ?) OR name=?) AND channel=?",
+        [ip, range, wrange, name, chan],
+        function (err, rows) {
+            callback(err, err ? false : rows.length > 0 && rows[0].count > 0);
+        });
+    },
+
+    /**
      * Lists all bans
      */
     listBans: function (chan, callback) {
@@ -618,5 +644,35 @@ module.exports = {
         }
 
         db.query("DELETE FROM `channel_bans` WHERE channel=?", [chan], callback);
+    },
+
+    /**
+     * Updates the `last_loaded` column to be the current timestamp
+     */
+    updateLastLoaded: function updateLastLoaded(channelId) {
+        if (channelId <= 0) {
+            return;
+        }
+
+        db.query("UPDATE channels SET last_loaded = ? WHERE id = ?", [new Date(), channelId], error => {
+            if (error) {
+                LOGGER.error(`Failed to update last_loaded column for channel ID ${channelId}: ${error}`);
+            }
+        });
+    },
+
+    /**
+     * Updates the `owner_last_seen` column to be the current timestamp
+     */
+    updateOwnerLastSeen: function updateOwnerLastSeen(channelId) {
+        if (channelId <= 0) {
+            return;
+        }
+
+        db.query("UPDATE channels SET owner_last_seen = ? WHERE id = ?", [new Date(), channelId], error => {
+            if (error) {
+                LOGGER.error(`Failed to update owner_last_seen column for channel ID ${channelId}: ${error}`);
+            }
+        });
     }
 };

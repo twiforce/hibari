@@ -5,7 +5,8 @@ var https = require("https");
 var http = require("http");
 var urlparse = require("url");
 var path = require("path");
-require("status-message-polyfill");
+
+const LOGGER = require('@calzoneman/jsli')('ffmpeg');
 
 var USE_JSON = true;
 var TIMEOUT = 30000;
@@ -20,7 +21,8 @@ var acceptedCodecs = {
 
 var acceptedAudioCodecs = {
     "mp3": true,
-    "vorbis": true
+    "vorbis": true,
+    "aac": true
 };
 
 var audioOnlyContainers = {
@@ -39,7 +41,7 @@ function initFFLog() {
 }
 
 function fixRedirectIfNeeded(urldata, redirect) {
-    if (!/^https?:/.test(redirect)) {
+    if (!/^https:/.test(redirect)) {
         redirect = urldata.protocol + "//" + urldata.host + redirect;
     }
 
@@ -58,6 +60,8 @@ function translateStatusCode(statusCode) {
                 "the file to be downloaded.";
         case 404:
             return "The requested link could not be found (404).";
+        case 410:
+            return "The requested link does not exist (410 Gone).";
         case 500:
         case 503:
             return "The website hosting the audio/video link encountered an error " +
@@ -73,8 +77,8 @@ function translateStatusCode(statusCode) {
 function testUrl(url, cb, redirCount) {
     if (!redirCount) redirCount = 0;
     var data = urlparse.parse(url);
-    if (!/https?:/.test(data.protocol)) {
-        return cb("Only links starting with 'http://' or 'https://' are supported " +
+    if (!/https:/.test(data.protocol)) {
+        return cb("Only links starting with 'https://' are supported " +
                   "for raw audio/video support");
     }
 
@@ -115,6 +119,13 @@ function testUrl(url, cb, redirCount) {
     });
 
     req.on("error", function (err) {
+        if (/hostname\/ip doesn't match/i.test(err.message)) {
+            cb("The remote server provided an invalid SSL certificate.  Details: "
+                    + err.reason);
+            return;
+        }
+
+        LOGGER.error("Error sending preflight request: %s (link: %s)", err.message, url);
         cb("An unexpected error occurred while trying to process the link.  " +
            "Try again, and contact support for further troubleshooting if the " +
            "problem continues." + (!!err.code ? (" Error code: " + err.code) : ""));
@@ -243,7 +254,7 @@ exports.ffprobe = function ffprobe(filename, cb) {
     var stdout = "";
     var stderr = "";
     var timer = setTimeout(function () {
-        Logger.errlog.log("Possible runaway ffprobe process for file " + filename);
+        LOGGER.error("Possible runaway ffprobe process for file " + filename);
         fflog("Killing ffprobe for " + filename + " after " + (TIMEOUT/1000) + " seconds");
         childErr = new Error("File query exceeded time limit of " + (TIMEOUT/1000) +
                              " seconds.  To avoid this issue, encode your videos " +
@@ -276,7 +287,7 @@ exports.ffprobe = function ffprobe(filename, cb) {
         fflog("ffprobe exited with code " + code + " for file " + filename);
         if (code !== 0) {
             if (stderr.match(/unrecognized option|json/i) && USE_JSON) {
-                Logger.errlog.log("Warning: ffprobe does not support -of json.  " +
+                LOGGER.warn("ffprobe does not support -of json.  " +
                                   "Assuming it will have old output format.");
                 USE_JSON = false;
                 return ffprobe(filename, cb);
@@ -314,9 +325,9 @@ exports.query = function (filename, cb) {
         return cb("Raw file playback is not enabled on this server");
     }
 
-    if (!filename.match(/^https?:\/\//)) {
-        return cb("Raw file playback is only supported for links accessible via HTTP " +
-                  "or HTTPS.  Ensure that the link begins with 'http://' or 'https://'");
+    if (!filename.match(/^https:\/\//)) {
+        return cb("Raw file playback is only supported for links accessible via HTTPS. " +
+                  "Ensure that the link begins with 'https://'.");
     }
 
     testUrl(filename, function (err) {
@@ -345,13 +356,13 @@ exports.query = function (filename, cb) {
                     // Ignore ffprobe error messages, they are common and most often
                     // indicate a problem with the remote file, not with this code.
                     if (!/(av|ff)probe/.test(String(err)))
-                        Logger.errlog.log(err.stack || err);
+                        LOGGER.error(err.stack || err);
                     return cb("An unexpected error occurred while trying to process " +
                               "the link.  Contact support for troubleshooting " +
                               "assistance.");
                 } else {
                     if (!/(av|ff)probe/.test(String(err)))
-                        Logger.errlog.log(err.stack || err);
+                        LOGGER.error(err.stack || err);
                     return cb("An unexpected error occurred while trying to process " +
                               "the link.  Contact support for troubleshooting " +
                               "assistance.");
@@ -361,7 +372,7 @@ exports.query = function (filename, cb) {
             try {
                 data = reformatData(data);
             } catch (e) {
-                Logger.errlog.log(e.stack || e);
+                LOGGER.error(e.stack || e);
                 return cb("An unexpected error occurred while trying to process " +
                           "the link.  Contact support for troubleshooting " +
                           "assistance.");

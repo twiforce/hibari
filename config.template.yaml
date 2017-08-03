@@ -9,6 +9,7 @@ mysql:
   database: 'cytube3'
   user: 'cytube3'
   password: ''
+  pool-size: 10
 
 # Define IPs/ports to listen on
 # Each entry MUST define ip and port (ip can be '' to bind all available addresses)
@@ -69,6 +70,9 @@ http:
   index:
     # Maximum number of channels to display on the index page public channel list
     max-entries: 50
+  # Configure trusted proxy addresses to map X-Forwarded-For to the client IP.
+  # See also: https://github.com/jshttp/proxy-addr
+  trust-proxies: ['loopback']
 
 # HTTPS server details
 https:
@@ -137,8 +141,6 @@ mail:
 #     5. Click "Server key"
 #     6. Under "APIs & auth" click "YouTube Data API" and then click "Enable API"
 youtube-v3-key: ''
-# Minutes between saving channel state to disk
-channel-save-interval: 5
 # Limit for the number of channels a user can register
 max-channels-per-user: 5
 # Limit for the number of accounts an IP address can register
@@ -146,12 +148,23 @@ max-accounts-per-ip: 5
 # Minimum number of seconds between guest logins from the same IP
 guest-login-delay: 60
 
-# Configure statistics tracking
-stats:
-  # Interval (in milliseconds) between data points - default 1h
-  interval: 3600000
-  # Maximum age of a datapoint (ms) before it is deleted - default 24h
-  max-age: 86400000
+# Allows you to customize the path divider. The /r/ in http://localhost/r/yourchannel
+# Acceptable characters are a-z A-Z 0-9 _ and -
+channel-path: 'r'
+# Allows you to blacklist certain channels.  Users will be automatically kicked
+# upon trying to join one.
+channel-blacklist: []
+# Minutes between saving channel state to disk
+channel-save-interval: 5
+# Determines channel data storage mechanism.
+# Defaults to 'file', in which channel data is JSON stringified and saved to a file
+# in the `chandump/` folder.  This is the legacy behavior of CyTube.
+# The other possible option is 'database', in which case each key-value pair of
+# channel data is stored as a row in the `channel_data` database table.
+# To migrate legacy chandump files to the database, shut down CyTube (to prevent
+# concurrent updates), then run `node lib/channel-storage/migrate.js`.
+channel-storage:
+  type: 'file'
 
 # Configure periodic clearing of old alias data
 aliases:
@@ -162,16 +175,6 @@ aliases:
 
 # Workaround for Vimeo blocking my domain
 vimeo-workaround: false
-
-# OPTIONAL: Use Vimeo's OAuth API instead of the anonymous API.
-# This allows you to add private videos that have embedding enabled.
-# See https://developer.vimeo.com/apps/new to register for this API.
-# Note that in order to use this feature you must agree to Vimeo's
-# Terms of Service and License Agreement.
-vimeo-oauth:
-  enabled: false
-  consumer-key: ''
-  secret: ''
 
 # Regular expressions for defining reserved user and channel names and page titles
 # The list of regular expressions will be joined with an OR, and compared without
@@ -207,10 +210,6 @@ playlist:
 # The server must be invoked with node --expose-gc index.js for this to have any effect.
 aggressive-gc: false
 
-# Allows you to blacklist certain channels.  Users will be automatically kicked
-# upon trying to join one.
-channel-blacklist: []
-
 # If you have ffmpeg installed, you can query metadata from raw files, allowing
 # server-synched raw file playback.  This requires the following:
 #   * ffmpeg must be installed on the server
@@ -230,16 +229,6 @@ setuid:
 # how long to wait in ms before changing uid/gid
   timeout: 15
 
-# Determines channel data storage mechanism.
-# Defaults to 'file', in which channel data is JSON stringified and saved to a file
-# in the `chandump/` folder.  This is the legacy behavior of CyTube.
-# The other possible option is 'database', in which case each key-value pair of
-# channel data is stored as a row in the `channel_data` database table.
-# To migrate legacy chandump files to the database, shut down CyTube (to prevent
-# concurrent updates), then run `node lib/channel-storage/migrate.js`.
-channel-storage:
-  type: 'file'
-
 # Allows for external services to access the system commandline
 # Useful for setups where stdin isn't available such as when using PM2
 service-socket:
@@ -249,3 +238,6 @@ service-socket:
 # Twitch Client ID for the data API (used for VOD lookups)
 # https://github.com/justintv/Twitch-API/blob/master/authentication.md#developer-setup
 twitch-client-id: null
+
+poll:
+  max-options: 50

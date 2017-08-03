@@ -1,8 +1,10 @@
 var db = require("../database");
-var Logger = require("../logger");
 var Q = require("q");
+import Promise from 'bluebird';
 
-const DB_VERSION = 7;
+const LOGGER = require('@calzoneman/jsli')('database/update');
+
+const DB_VERSION = 11;
 var hasUpdates = [];
 
 module.exports.checkVersion = function () {
@@ -12,7 +14,7 @@ module.exports.checkVersion = function () {
         }
 
         if (rows.length === 0) {
-            Logger.errlog.log("[Warning] db_version key missing from database.  Setting " +
+            LOGGER.warn("db_version key missing from database.  Setting " +
                               "db_version=" + DB_VERSION);
             db.query("INSERT INTO `meta` (`key`, `value`) VALUES ('db_version', ?)",
                      [DB_VERSION],
@@ -25,7 +27,7 @@ module.exports.checkVersion = function () {
             }
             var next = function () {
                 hasUpdates.push(v);
-                Logger.syslog.log("Updated database to version " + v);
+                LOGGER.info("Updated database to version " + v);
                 if (v < DB_VERSION) {
                     update(v++, next);
                 } else {
@@ -47,7 +49,7 @@ function update(version, cb) {
             Q.nfcall(mergeChannelRanks),
             Q.nfcall(mergeChannelBans)
         ]).done(function () {
-            Logger.syslog.log("Merged channel tables.  Please verify that everything " +
+            LOGGER.info("Merged channel tables.  Please verify that everything " +
                               "is working correctly, and then type '/delete_old_tables'" +
                               " into the CyTube process to remove the unused tables.");
             cb();
@@ -58,11 +60,19 @@ function update(version, cb) {
         fixCustomEmbeds(cb);
     } else if (version < 7) {
         fixCustomEmbedsInUserPlaylists(cb);
+    } else if (version < 8) {
+        addUsernameDedupeColumn(cb);
+    } else if (version < 9) {
+        populateUsernameDedupeColumn(cb);
+    } else if (version < 10) {
+        addChannelLastLoadedColumn(cb);
+    } else if (version < 11) {
+        addChannelOwnerLastSeenColumn(cb);
     }
 }
 
 function addMetaColumnToLibraries(cb) {
-    Logger.syslog.log("[database] db version indicates channel libraries don't have " +
+    LOGGER.info("db version indicates channel libraries don't have " +
                       "meta column.  Updating...");
     Q.nfcall(db.query, "SHOW TABLES")
     .then(function (rows) {
@@ -76,14 +86,14 @@ function addMetaColumnToLibraries(cb) {
         rows.forEach(function (table) {
             queue.push(Q.nfcall(db.query, "ALTER TABLE `" + table + "` ADD meta TEXT")
                 .then(function () {
-                    Logger.syslog.log("Added meta column to " + table);
+                    LOGGER.info("Added meta column to " + table);
                 })
             );
         });
 
         return Q.all(queue);
     }).catch(function (err) {
-        Logger.errlog.log("Adding meta column to library tables failed: " + err);
+        LOGGER.error("Adding meta column to library tables failed: " + err);
     }).done(cb);
 }
 
@@ -103,12 +113,12 @@ function mergeChannelLibraries(cb) {
                 "INSERT INTO `channel_libraries` SELECT id, title, seconds, type, meta, ?" +
                 " AS channel FROM `" + table + "`", [name])
                 .then(function () {
-                    Logger.syslog.log("Copied " + table + " to channel_libraries");
+                    LOGGER.info("Copied " + table + " to channel_libraries");
                 }).catch(function (err) {
-                    Logger.errlog.log("Copying " + table + " to channel_libraries failed: " +
+                    LOGGER.error("Copying " + table + " to channel_libraries failed: " +
                         err);
                     if (err.stack) {
-                        Logger.errlog.log(err.stack);
+                        LOGGER.error(err.stack);
                     }
                 })
             );
@@ -116,9 +126,9 @@ function mergeChannelLibraries(cb) {
 
         return Q.all(queue);
     }).catch(function (err) {
-        Logger.errlog.log("Copying libraries to channel_libraries failed: " + err);
+        LOGGER.error("Copying libraries to channel_libraries failed: " + err);
         if (err.stack) {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
         }
     }).done(function () { cb(null); });
 }
@@ -139,12 +149,12 @@ function mergeChannelRanks(cb) {
                 "INSERT INTO `channel_ranks` SELECT name, rank, ?" +
                 " AS channel FROM `" + table + "`", [name])
                 .then(function () {
-                    Logger.syslog.log("Copied " + table + " to channel_ranks");
+                    LOGGER.info("Copied " + table + " to channel_ranks");
                 }).catch(function (err) {
-                    Logger.errlog.log("Copying " + table + " to channel_ranks failed: " +
+                    LOGGER.error("Copying " + table + " to channel_ranks failed: " +
                         err);
                     if (err.stack) {
-                        Logger.errlog.log(err.stack);
+                        LOGGER.error(err.stack);
                     }
                 })
             );
@@ -152,9 +162,9 @@ function mergeChannelRanks(cb) {
 
         return Q.all(queue);
     }).catch(function (err) {
-        Logger.errlog.log("Copying ranks to channel_ranks failed: " + err);
+        LOGGER.error("Copying ranks to channel_ranks failed: " + err);
         if (err.stack) {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
         }
     }).done(function () { cb(null); });
 }
@@ -175,12 +185,12 @@ function mergeChannelBans(cb) {
                 "INSERT INTO `channel_bans` SELECT id, ip, name, bannedby, reason, ?" +
                 " AS channel FROM `" + table + "`", [name])
                 .then(function () {
-                    Logger.syslog.log("Copied " + table + " to channel_bans");
+                    LOGGER.info("Copied " + table + " to channel_bans");
                 }).catch(function (err) {
-                    Logger.errlog.log("Copying " + table + " to channel_bans failed: " +
+                    LOGGER.error("Copying " + table + " to channel_bans failed: " +
                         err);
                     if (err.stack) {
-                        Logger.errlog.log(err.stack);
+                        LOGGER.error(err.stack);
                     }
                 })
             );
@@ -188,9 +198,9 @@ function mergeChannelBans(cb) {
 
         return Q.all(queue);
     }).catch(function (err) {
-        Logger.errlog.log("Copying ranks to channel_bans failed: " + err);
+        LOGGER.error("Copying ranks to channel_bans failed: " + err);
         if (err.stack) {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
         }
     }).done(function () { cb(null); });
 }
@@ -208,11 +218,11 @@ module.exports.deleteOldChannelTables = function (cb) {
         rows.forEach(function (table) {
             queue.push(Q.nfcall(db.query, "DROP TABLE `" + table + "`")
                 .then(function () {
-                    Logger.syslog.log("Deleted " + table);
+                    LOGGER.info("Deleted " + table);
                 }).catch(function (err) {
-                    Logger.errlog.log("Deleting " + table + " failed: " + err);
+                    LOGGER.error("Deleting " + table + " failed: " + err);
                     if (err.stack) {
-                        Logger.errlog.log(err.stack);
+                        LOGGER.error(err.stack);
                     }
                 })
             );
@@ -220,9 +230,9 @@ module.exports.deleteOldChannelTables = function (cb) {
 
         return Q.all(queue);
     }).catch(function (err) {
-        Logger.errlog.log("Deleting old tables failed: " + err);
+        LOGGER.error("Deleting old tables failed: " + err);
         if (err.stack) {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
         }
     }).done(cb);
 };
@@ -238,10 +248,10 @@ function fixUtf8mb4(cb) {
     Q.allSettled(queries.map(function (query) {
         return Q.nfcall(db.query, query);
     })).then(function () {
-        Logger.syslog.log("Fixed utf8mb4");
+        LOGGER.info("Fixed utf8mb4");
         cb();
     }).catch(function (e) {
-        Logger.errlog.log("Failed to fix utf8mb4: " + e);
+        LOGGER.error("Failed to fix utf8mb4: " + e);
     });
 };
 
@@ -267,7 +277,7 @@ function fixCustomEmbeds(cb) {
         });
 
         Q.allSettled(all).then(function () {
-            Logger.syslog.log("Converted custom embeds.");
+            LOGGER.info("Converted custom embeds.");
             cb();
         });
     });
@@ -303,7 +313,7 @@ function fixCustomEmbedsInUserPlaylists(cb) {
                     try {
                         media = CustomEmbedFilter(item.id);
                     } catch (e) {
-                        Logger.syslog.log("WARNING: Unable to convert " + item.id);
+                        LOGGER.info("WARNING: Unable to convert " + item.id);
                         continue;
                     }
 
@@ -323,10 +333,85 @@ function fixCustomEmbedsInUserPlaylists(cb) {
             });
 
             Q.allSettled(all).then(function () {
-                Logger.syslog.log('Fixed custom embeds in user_playlists');
+                LOGGER.info('Fixed custom embeds in user_playlists');
                 cb();
             });
         }).catch(function (err) {
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
         });
+}
+
+function addUsernameDedupeColumn(cb) {
+    LOGGER.info("Adding name_dedupe column on the users table");
+    db.query("ALTER TABLE users ADD COLUMN name_dedupe VARCHAR(20) UNIQUE DEFAULT NULL", (error) => {
+        if (error) {
+            LOGGER.error(`Unable to add name_dedupe column: ${error}`);
+        } else {
+            cb();
+        }
+    });
+}
+
+function populateUsernameDedupeColumn(cb) {
+    const dbUsers = require("./accounts");
+    LOGGER.info("Populating name_dedupe column on the users table");
+    db.query("SELECT id, name FROM users WHERE name_dedupe IS NULL", (err, rows) => {
+        if (err) {
+            LOGGER.error("Unable to perform database upgrade to add dedupe column: " + err);
+            return;
+        }
+
+        Promise.map(rows, row => {
+            const dedupedName = dbUsers.dedupeUsername(row.name);
+            LOGGER.info(`Deduping [${row.name}] as [${dedupedName}]`);
+            return db.getDB().knex.raw("UPDATE users SET name_dedupe = ? WHERE id = ?", [dedupedName, row.id])
+                    .catch(error => {
+                if (error.errno === 1062) {
+                    LOGGER.info(`WARNING: could not set name_dedupe for [${row.name}] due to an existing row for [${dedupedName}]`);
+                } else {
+                    throw error;
+                }
+            });
+        }, { concurrency: 10 }).then(() => {
+            cb();
+        }).catch(error => {
+            LOGGER.error("Unable to perform database upgrade to add dedupe column: " + (error.stack ? error.stack : error));
+        })
+    });
+}
+
+function addChannelLastLoadedColumn(cb) {
+    db.query("ALTER TABLE channels ADD COLUMN last_loaded TIMESTAMP NOT NULL DEFAULT 0", error => {
+        if (error) {
+            LOGGER.error(`Failed to add last_loaded column: ${error}`);
+            return;
+        }
+
+        db.query("ALTER TABLE channels ADD INDEX i_last_loaded (last_loaded)", error => {
+            if (error) {
+                LOGGER.error(`Failed to add index on last_loaded column: ${error}`);
+                return;
+            }
+
+            cb();
+        });
+    });
+}
+
+function addChannelOwnerLastSeenColumn(cb) {
+    db.query("ALTER TABLE channels ADD COLUMN owner_last_seen TIMESTAMP NOT NULL DEFAULT 0", error => {
+        if (error) {
+            LOGGER.error(`Failed to add owner_last_seen column: ${error}`);
+            return;
+        }
+
+        db.query("ALTER TABLE channels ADD INDEX i_owner_last_seen (owner_last_seen)", error => {
+            if (error) {
+                LOGGER.error(`Failed to add index on owner_last_seen column: ${error}`);
+                return;
+            }
+
+            cb();
+        });
+    });
 }

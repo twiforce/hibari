@@ -1,49 +1,105 @@
 var mysql = require("mysql");
 var bcrypt = require("bcrypt");
-var $util = require("./utilities");
-var Logger = require("./logger");
 var Config = require("./config");
 var tables = require("./database/tables");
 var net = require("net");
 var util = require("./utilities");
-import * as Metrics from 'cytube-common/lib/metrics/metrics';
+import * as Metrics from './metrics/metrics';
+import knex from 'knex';
+import { GlobalBanDB } from './db/globalban';
+import { Summary, Counter } from 'prom-client';
 
-var pool = null;
-var global_ipbans = {};
+const LOGGER = require('@calzoneman/jsli')('database');
+const queryLatency = new Summary({
+    name: 'cytube_db_query_latency',
+    help: 'DB query latency (including time spent acquiring connections)'
+});
+const queryCount = new Counter({
+    name: 'cytube_db_query_count',
+    help: 'DB query count'
+});
 
-module.exports.init = function () {
-    pool = mysql.createPool({
-        host: Config.get("mysql.server"),
-        port: Config.get("mysql.port"),
-        user: Config.get("mysql.user"),
-        password: Config.get("mysql.password"),
-        database: Config.get("mysql.database"),
-        multipleStatements: true,
-        charset: "UTF8MB4_GENERAL_CI" // Needed for emoji and other non-BMP unicode
-    });
+let db = null;
+let globalBanDB = null;
 
-    // Test the connection
-    pool.getConnection(function (err, conn) {
-        if (err) {
-            Logger.errlog.log("Initial database connection failed: " + err.stack);
-            process.exit(1);
-        } else {
-            tables.init(module.exports.query, function (err) {
-                if (err) {
-                    return;
-                }
-                require("./database/update").checkVersion();
-                module.exports.loadAnnouncement();
-            });
-            // Refresh global IP bans
-            module.exports.listGlobalBans();
+class Database {
+    constructor(knexConfig = null) {
+        if (knexConfig === null) {
+            knexConfig = {
+                client: 'mysql',
+                connection: {
+                    host: Config.get('mysql.server'),
+                    port: Config.get('mysql.port'),
+                    user: Config.get('mysql.user'),
+                    password: Config.get('mysql.password'),
+                    database: Config.get('mysql.database'),
+                    multipleStatements: true, // Legacy thing
+                    charset: 'UTF8MB4_GENERAL_CI'
+                },
+                pool: {
+                    min: Config.get('mysql.pool-size'),
+                    max: Config.get('mysql.pool-size'),
+                    refreshIdle: false
+                },
+                debug: !!process.env.KNEX_DEBUG
+            };
         }
-    });
 
-    global_ipbans = {};
+        this.knex = knex(knexConfig);
+    }
+
+    runTransaction(fn) {
+        const timer = Metrics.startTimer('db:queryTime');
+        const end = queryLatency.startTimer();
+        return this.knex.transaction(fn).finally(() => {
+            end();
+            Metrics.stopTimer(timer);
+            queryCount.inc();
+        });
+    }
+}
+
+module.exports.Database = Database;
+
+module.exports.init = function (newDB) {
+    if (newDB) {
+        db = newDB;
+    } else {
+        db = new Database();
+    }
+    db.knex.raw('select 1 from dual')
+            .catch(error => {
+                LOGGER.error('Initial database connection failed: %s', error.stack);
+                process.exit(1);
+            }).then(() => {
+                process.nextTick(legacySetup);
+            });
+
     module.exports.users = require("./database/accounts");
     module.exports.channels = require("./database/channels");
 };
+
+module.exports.getDB = function getDB() {
+    return db;
+};
+
+module.exports.getGlobalBanDB = function getGlobalBanDB() {
+    if (globalBanDB === null) {
+        globalBanDB = new GlobalBanDB(db);
+    }
+
+    return globalBanDB;
+};
+
+function legacySetup() {
+    tables.init(module.exports.query, function (err) {
+        if (err) {
+            return;
+        }
+        require("./database/update").checkVersion();
+        module.exports.loadAnnouncement();
+    });
+}
 
 /**
  * Execute a database query
@@ -53,44 +109,26 @@ module.exports.query = function (query, sub, callback) {
     // 2nd argument is optional
     if (typeof sub === "function") {
         callback = sub;
-        sub = false;
+        sub = undefined;
     }
 
     if (typeof callback !== "function") {
         callback = blackHole;
     }
 
-    pool.getConnection(function (err, conn) {
-        if (err) {
-            Logger.errlog.log("! DB connection failed: " + err);
-            callback("Database failure", null);
-        } else {
-            function cback(err, res) {
-                if (err) {
-                    Logger.errlog.log("! DB query failed: " + query);
-                    if (sub) {
-                        Logger.errlog.log("Substitutions: " + sub);
-                    }
-                    Logger.errlog.log(err);
-                    callback("Database failure", null);
-                } else {
-                    callback(null, res);
-                }
-                conn.release();
-                Metrics.stopTimer(timer);
-            }
+    if (process.env.SHOW_SQL) {
+        console.log(query);
+    }
 
-            if (process.env.SHOW_SQL) {
-                console.log(query);
-            }
-
-            if (sub) {
-                conn.query(query, sub, cback);
-            } else {
-                conn.query(query, cback);
-            }
-        }
-    });
+    db.knex.raw(query, sub)
+        .then(res => {
+            process.nextTick(callback, null, res[0]);
+        }).catch(error => {
+            LOGGER.error('Legacy DB query failed.  Query: %s, Substitutions: %j, Error: %s', query, sub, error);
+            process.nextTick(callback, 'Database failure', null);
+        }).finally(() => {
+            Metrics.stopTimer(timer);
+        });
 };
 
 /**
@@ -99,92 +137,6 @@ module.exports.query = function (query, sub, callback) {
 function blackHole() {
 
 }
-
-/* REGION global bans */
-
-/**
- * Check if an IP address is globally banned
- */
-module.exports.isGlobalIPBanned = function (ip, callback) {
-    var range = util.getIPRange(ip);
-    var wrange = util.getWideIPRange(ip);
-    var banned = ip in global_ipbans ||
-    range in global_ipbans ||
-    wrange in global_ipbans;
-
-    if (callback) {
-        callback(null, banned);
-    }
-    return banned;
-};
-
-/**
- * Retrieve all global bans from the database.
- * Cache locally in global_bans
- */
-module.exports.listGlobalBans = function (callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    module.exports.query("SELECT * FROM global_bans WHERE 1", function (err, res) {
-        if (err) {
-            callback(err, null);
-            return;
-        }
-
-        global_ipbans = {};
-        for (var i = 0; i < res.length; i++) {
-            global_ipbans[res[i].ip] = res[i];
-        }
-
-        callback(null, global_ipbans);
-    });
-};
-
-/**
- * Globally ban by IP
- */
-module.exports.globalBanIP = function (ip, reason, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "INSERT INTO global_bans (ip, reason) VALUES (?, ?)" +
-                " ON DUPLICATE KEY UPDATE reason=?";
-    module.exports.query(query, [ip, reason, reason], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        module.exports.listGlobalBans();
-        callback(null, res);
-    });
-};
-
-/**
- * Remove a global IP ban
- */
-module.exports.globalUnbanIP = function (ip, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-
-    var query = "DELETE FROM global_bans WHERE ip=?";
-    module.exports.query(query, [ip], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        module.exports.listGlobalBans();
-        callback(null, res);
-    });
-};
-
-/* END REGION */
 
 /* password recovery */
 
@@ -196,7 +148,7 @@ module.exports.cleanOldPasswordResets = function (callback) {
         callback = blackHole;
     }
 
-    var query = "DELETE FROM aliases WHERE time < ?";
+    var query = "DELETE FROM password_reset WHERE expire < ?";
     module.exports.query(query, [Date.now() - 24*60*60*1000], callback);
 };
 
@@ -241,114 +193,6 @@ module.exports.lookupPasswordReset = function (hash, cb) {
 module.exports.deletePasswordReset = function (hash) {
     module.exports.query("DELETE FROM `password_reset` WHERE hash=?", [hash]);
 };
-
-/*
-module.exports.genPasswordReset = function (ip, name, email, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var query = "SELECT email FROM registrations WHERE uname=?";
-    module.exports.query(query, [name], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        if(res.length == 0) {
-            callback("Provided username does not exist", null);
-            return;
-        }
-
-        if(res[0].email != email) {
-            callback("Provided email does not match user's email", null);
-            return;
-        }
-
-        var hash = hashlib.sha256($util.randomSalt(32) + name);
-        var expire = Date.now() + 24*60*60*1000;
-        query = "INSERT INTO password_reset " +
-                "(ip, name, hash, email, expire) VALUES (?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE hash=?, expire=?";
-        module.exports.query(query, [ip, name, hash, email, expire, hash, expire],
-                   function (err, res) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            callback(null, hash);
-        });
-    });
-};
-
-module.exports.recoverUserPassword = function (hash, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var query = "SELECT * FROM password_reset WHERE hash=?";
-    module.exports.query(query, [hash], function (err, res) {
-        if(err) {
-            callback(err, null);
-            return;
-        }
-
-        if(res.length == 0) {
-            callback("Invalid password reset link", null);
-            return;
-        }
-
-        if(Date.now() > res[0].expire) {
-            module.exports.query("DELETE FROM password_reset WHERE hash=?", [hash]);
-            callback("Link expired.  Password resets are valid for 24hr",
-                     null);
-            return;
-        }
-
-        var name = res[0].name;
-
-        resetUserPassword(res[0].name, function (err, pw) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            module.exports.query("DELETE FROM password_reset WHERE hash=?", [hash]);
-            callback(null, {
-                name: name,
-                pw: pw
-            });
-        });
-    });
-};
-
-module.exports.resetUserPassword = function (name, callback) {
-    if(typeof callback !== "function")
-        callback = blackHole;
-
-    var pwChars = "abcdefghijkmnopqrstuvwxyz023456789";
-    var pw = "";
-    for(var i = 0; i < 10; i++)
-        pw += pwChars[parseInt(Math.random() * 33)];
-
-    bcrypt.hash(pw, 10, function (err, data) {
-        if(err) {
-            Logger.errlog.log("bcrypt error: " + err);
-            callback("Password reset failure", null);
-            return;
-        }
-
-        var query = "UPDATE registrations SET pw=? WHERE uname=?";
-        module.exports.query(query, [data, name], function (err, res) {
-            if(err) {
-                callback(err, null);
-                return;
-            }
-
-            callback(null, pw);
-        });
-    });
-};
-*/
 
 /* user playlists */
 
@@ -529,37 +373,6 @@ module.exports.getIPs = function (name, callback) {
 
 /* END REGION */
 
-/* REGION stats */
-
-module.exports.addStatPoint = function (time, ucount, ccount, mem, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "INSERT INTO stats VALUES (?, ?, ?, ?)";
-    module.exports.query(query, [time, ucount, ccount, mem], callback);
-};
-
-module.exports.pruneStats = function (before, callback) {
-    if (typeof callback !== "function") {
-        callback = blackHole;
-    }
-
-    var query = "DELETE FROM stats WHERE time < ?";
-    module.exports.query(query, [before], callback);
-};
-
-module.exports.listStats = function (callback) {
-    if (typeof callback !== "function") {
-        return;
-    }
-
-    var query = "SELECT * FROM stats ORDER BY time ASC";
-    module.exports.query(query, callback);
-};
-
-/* END REGION */
-
 /* Misc */
 module.exports.loadAnnouncement = function () {
     var query = "SELECT * FROM `meta` WHERE `key`='announcement'";
@@ -576,7 +389,7 @@ module.exports.loadAnnouncement = function () {
         try {
             announcement = JSON.parse(announcement);
         } catch (e) {
-            Logger.errlog.log("Invalid announcement data in database: " +
+            LOGGER.error("Invalid announcement data in database: " +
                               announcement.value);
             module.exports.clearAnnouncement();
             return;

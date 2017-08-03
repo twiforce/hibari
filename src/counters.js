@@ -1,11 +1,9 @@
-var Logger = require('./logger');
-var path = require('path');
-var counterLog = new Logger.Logger(path.resolve(__dirname, '..', 'counters.log'));
-import os from 'os';
 import io from 'socket.io';
 import Socket from 'socket.io/lib/socket';
-import * as Metrics from 'cytube-common/lib/metrics/metrics';
-import { JSONFileMetricsReporter } from 'cytube-common/lib/metrics/jsonfilemetricsreporter';
+import * as Metrics from './metrics/metrics';
+import { JSONFileMetricsReporter } from './metrics/jsonfilemetricsreporter';
+
+const LOGGER = require('@calzoneman/jsli')('counters');
 
 var counters = {};
 var server = null;
@@ -45,7 +43,7 @@ function setChannelCounts(metrics) {
         metrics.addProperty('channelCount:all', allCount);
         metrics.addProperty('channelCount:public', publicCount);
     } catch (error) {
-        Logger.errlog.log(error.stack);
+        LOGGER.error(error.stack);
     }
 }
 

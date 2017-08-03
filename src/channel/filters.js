@@ -1,7 +1,7 @@
 var FilterList = require("cytubefilters");
 var ChannelModule = require("./module");
-var XSS = require("../xss");
-var Logger = require("../logger");
+
+const LOGGER = require('@calzoneman/jsli')('filters');
 
 /*
  * Converts JavaScript-style replacements ($1, $2, etc.) with
@@ -22,7 +22,6 @@ function validateFilter(f) {
     }
 
     f.replace = fixReplace(f.replace.substring(0, 1000));
-    f.replace = XSS.sanitizeHTML(f.replace);
     f.flags = f.flags.substring(0, 4);
 
     try {
@@ -78,7 +77,7 @@ ChatFilterModule.prototype.load = function (data) {
         try {
             this.filters = new FilterList(filters);
         } catch (e) {
-            Logger.errlog.log("Filter load failed: " + e + " (channel:" +
+            LOGGER.error("Filter load failed: " + e + " (channel:" +
                 this.channel.name);
             this.channel.logger.log("Failed to load filters: " + e);
         }

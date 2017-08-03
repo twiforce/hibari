@@ -1,6 +1,7 @@
 import { PartitionMap } from './partitionmap';
-import logger from 'cytube-common/lib/logger';
 import { EventEmitter } from 'events';
+
+const logger = require('@calzoneman/jsli')('RedisPartitionMapReloader');
 
 class RedisPartitionMapReloader extends EventEmitter {
     constructor(config, redisClient, subClient) {

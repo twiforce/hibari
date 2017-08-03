@@ -63,6 +63,7 @@ mixin miscoptions
       +rcheckbox-auto("cs-allow_dupes", "Разрешить добавлять в очередь дубликаты видео")
       +textbox-auto("cs-voteskip_ratio", "Голосов для пропуска", "0.5")
       +textbox-auto("cs-maxlength", "Максимальная продолжительность видео", "ЧЧ:ММ:СС")
+      +textbox-timeinput-auto("cs-playlist_max_duration_per_user", "Max total queue time per user", "HH:MM:SS")
       +textbox-auto("cs-afk_timeout", "Вешать флаг /afk через", "0 для выключения")
       .form-group
         .col-sm-offset-4
@@ -85,7 +86,7 @@ mixin adminoptions
   #cs-adminoptions.tab-pane
     h4 Управление комнатой
     form.form-horizontal(action="javascript:void(0)")
-      - var defname = "Synchtube - /r/" + channelName
+      - var defname = `Synchtube - /${channelPath}/${channelName}`
       +textbox-auto("cs-pagetitle", "Заголовок страницы", defname)
       +textbox-auto("cs-password", "Пароль", "оставьте пустым, чтобы выключить")
       +textbox-auto("cs-externalcss", "Внешний CSS", "ссылка на файл")
@@ -93,7 +94,7 @@ mixin adminoptions
       +rcheckbox-auto("cs-show_public", "Показывать канал на главной")
       +rcheckbox-auto("cs-torbanned", "Блокировать подключения из сети Tor")
       +rcheckbox-auto("cs-allow_ascii_control", "Разрешить символы ASCII (напр., перенос строки)")
-      +textbox-auto("cs-playlist_max_per_user", "Максимальное количество видео от одного пользователя", "0 для отключения")
+      +textbox-auto("cs-playlist_max_per_user", "Максимальное количество видео от одного пользователя")
       .form-group
         .col-sm-8.col-sm-offset-4
           span.text-info Поставтье 0 для отключения ограничений
@@ -224,4 +225,3 @@ mixin chanlog
 
 mixin permeditor
   #cs-permedit.tab-pane
-  

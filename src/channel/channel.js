@@ -1,8 +1,5 @@
-var Logger = require("../logger");
 var ChannelModule = require("./module");
 var Flags = require("../flags");
-var Account = require("../account");
-var util = require("../utilities");
 var fs = require("graceful-fs");
 var path = require("path");
 var sio = require("socket.io");
@@ -12,6 +9,9 @@ import { ChannelStateSizeError } from '../errors';
 import Promise from 'bluebird';
 import { EventEmitter } from 'events';
 import { throttle } from '../util/throttle';
+import Logger from '../logger';
+
+const LOGGER = require('@calzoneman/jsli')('channel');
 
 const USERCOUNT_THROTTLE = 10000;
 
@@ -43,7 +43,7 @@ class ReferenceCounter {
                     delete this.references[caller];
                 }
             } else {
-                Logger.errlog.log("ReferenceCounter::unref() called by caller [" +
+                LOGGER.error("ReferenceCounter::unref() called by caller [" +
                         caller + "] but this caller had no active references! " +
                         `(channel: ${this.channelName})`);
             }
@@ -56,7 +56,7 @@ class ReferenceCounter {
     checkRefCount() {
         if (this.refCount === 0) {
             if (Object.keys(this.references).length > 0) {
-                Logger.errlog.log("ReferenceCounter::refCount reached 0 but still had " +
+                LOGGER.error("ReferenceCounter::refCount reached 0 but still had " +
                         "active references: " +
                         JSON.stringify(Object.keys(this.references)) +
                         ` (channel: ${this.channelName})`);
@@ -64,7 +64,7 @@ class ReferenceCounter {
                     this.refCount += this.references[caller];
                 }
             } else if (this.channel.users.length > 0) {
-                Logger.errlog.log("ReferenceCounter::refCount reached 0 but still had " +
+                LOGGER.error("ReferenceCounter::refCount reached 0 but still had " +
                         this.channel.users.length + " active users" +
                         ` (channel: ${this.channelName})`);
                 this.refCount = this.channel.users.length;
@@ -85,20 +85,19 @@ function Channel(name) {
     this.refCounter = new ReferenceCounter(this);
     this.flags = 0;
     this.id = 0;
+    this.ownerName = null;
     this.broadcastUsercount = throttle(() => {
         this.broadcastAll("usercount", this.users.length);
     }, USERCOUNT_THROTTLE);
-    var self = this;
+    const self = this;
     db.channels.load(this, function (err) {
         if (err && err !== "Channel is not registered") {
-            self.emit("loadFail", "Failed to load channel data from the database");
-            // Force channel to be unloaded, so that it will load properly when
-            // the database connection comes back
-            self.emit("empty");
-            return;
+            self.emit("loadFail", "Failed to load channel data from the database.  Please try again later.");
+            self.setFlag(Flags.C_ERROR);
         } else {
             self.initModules();
             self.loadState();
+            db.channels.updateLastLoaded(self.id);
         }
     });
 }
@@ -197,14 +196,11 @@ Channel.prototype.loadState = function () {
     }
 
     const self = this;
-    function errorLoad(msg) {
-        if (self.modules.customization) {
-            self.modules.customization.load({
-                motd: msg
-            });
-        }
-
-        self.setFlag(Flags.C_READY | Flags.C_ERROR);
+    function errorLoad(msg, suggestTryAgain = true) {
+        const extra = suggestTryAgain ? "  Please try again later." : "";
+        self.emit("loadFail", "Failed to load channel data from the database: " +
+                msg + extra);
+        self.setFlag(Flags.C_ERROR);
     }
 
     ChannelStore.load(this.id, this.uniqueName).then(data => {
@@ -212,7 +208,7 @@ Channel.prototype.loadState = function () {
             try {
                 this.modules[m].load(data);
             } catch (e) {
-                Logger.errlog.log("Failed to load module " + m + " for channel " +
+                LOGGER.error("Failed to load module " + m + " for channel " +
                         this.uniqueName);
             }
         });
@@ -223,8 +219,8 @@ Channel.prototype.loadState = function () {
                 "enforced by this server.  Please contact an administrator " +
                 "for assistance.";
 
-        Logger.errlog.log(err.stack);
-        errorLoad(message);
+        LOGGER.error(err.stack);
+        errorLoad(message, false);
     }).catch(err => {
         if (err.code === 'ENOENT') {
             Object.keys(this.modules).forEach(m => {
@@ -235,9 +231,9 @@ Channel.prototype.loadState = function () {
         } else {
             const message = "An error occurred when loading this channel's data from " +
                     "disk.  Please contact an administrator for assistance.  " +
-                    `The error was: ${err}`;
+                    `The error was: ${err}.`;
 
-            Logger.errlog.log(err.stack);
+            LOGGER.error(err.stack);
             errorLoad(message);
         }
     });
@@ -338,7 +334,7 @@ Channel.prototype.joinUser = function (user, data) {
                         if (user.inChannel()) {
                             self.broadcastAll("setUserRank", {
                                 name: user.getName(),
-                                rank: rank
+                                rank: user.account.effectiveRank
                             });
                         }
                     }
@@ -373,11 +369,10 @@ Channel.prototype.acceptUser = function (user) {
     user.autoAFK();
     user.socket.on("readChanLog", this.handleReadLog.bind(this, user));
 
-    Logger.syslog.log(user.realip + " зашел в комнату " + this.name);
-    if (user.socket._isUsingTor) {
+    LOGGER.info(user.realip + " зашел в комнату " + this.name);
+    if (user.socket.context.torConnection) {
         if (this.modules.options && this.modules.options.get("torbanned")) {
             user.kick("Этот канал запретил подключения из сети Tor.");
-
             this.logger.log("[login] Blocked connection from Tor exit at " +
                             user.displayip);
             return;
@@ -403,6 +398,9 @@ Channel.prototype.acceptUser = function (user) {
         loginStr += " (aliases: " + user.account.aliases.join(",") + ")";
         self.logger.log(loginStr);
         self.sendUserJoin(self.users, user);
+        if (user.getName().toLowerCase() === self.ownerName) {
+            db.channels.updateOwnerLastSeen(self.id);
+        }
     });
 
     this.users.push(user);
@@ -418,11 +416,20 @@ Channel.prototype.acceptUser = function (user) {
     if (!this.is(Flags.C_REGISTERED)) {
         user.socket.emit("channelNotRegistered");
     }
+
+    user.on('afk', function(afk){
+        self.sendUserMeta(self.users, user);
+        // TODO: Drop legacy setAFK frame after a few months
+        self.broadcastAll("setAFK", { name: user.getName(), afk: afk });
+    })
+    user.on("effectiveRankChange", (newRank, oldRank) => {
+        this.maybeResendUserlist(user, newRank, oldRank);
+    });
 };
 
 Channel.prototype.partUser = function (user) {
     if (!this.logger) {
-        Logger.errlog.log("partUser called on dead channel");
+        LOGGER.error("partUser called on dead channel");
         return;
     }
 
@@ -449,6 +456,15 @@ Channel.prototype.partUser = function (user) {
 
     this.refCounter.unref("Channel::user");
     user.die();
+};
+
+Channel.prototype.maybeResendUserlist = function maybeResendUserlist(user, newRank, oldRank) {
+    if ((newRank >= 2 && oldRank < 2)
+            || (newRank < 2 && oldRank >= 2)
+            || (newRank >= 255 && oldRank < 255)
+            || (newRank < 255 && oldRank >= 255)) {
+        this.sendUserlist([user]);
+    }
 };
 
 Channel.prototype.packUserData = function (user) {
