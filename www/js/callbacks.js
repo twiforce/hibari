@@ -1,9 +1,4 @@
 Callbacks = {
-
-    error: function (reason) {
-        window.SOCKET_ERROR_REASON = reason;
-    },
-
     /* fired when socket connection completes */
     connect: function() {
         HAS_CONNECTED_BEFORE = true;
@@ -24,7 +19,7 @@ Callbacks = {
         }
 
         $("<div/>").addClass("server-msg-reconnect")
-            .text("Соединение установлено")
+            .text("Connected")
             .appendTo($("#messagebuffer"));
         scrollChat();
         stopQueueSpinner(null);
@@ -35,13 +30,14 @@ Callbacks = {
             return;
         $("<div/>")
             .addClass("server-msg-disconnect")
-            .text("Соединение разорвано")
+            .text("Disconnected from server.")
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
 
     // Socket.IO error callback
     error: function (msg) {
+        window.SOCKET_ERROR_REASON = msg;
         $("<div/>")
             .addClass("server-msg-disconnect")
             .text("Unable to connect: " + msg)
@@ -92,7 +88,7 @@ Callbacks = {
     kick: function(data) {
         KICKED = true;
         $("<div/>").addClass("server-msg-disconnect")
-            .text("Выброшен: " + data.reason)
+            .text("Kicked: " + data.reason)
             .appendTo($("#messagebuffer"));
         scrollChat();
     },
@@ -123,12 +119,12 @@ Callbacks = {
 
     needPassword: function (wrongpw) {
         var div = $("<div/>");
-        $("<strong/>").text("Введите пароль")
+        $("<strong/>").text("Channel Password")
             .appendTo(div);
         if (wrongpw) {
             $("<br/>").appendTo(div);
             $("<span/>").addClass("text-error")
-                .text("Неверный пароль")
+                .text("Wrong Password")
                 .appendTo(div);
         }
 
@@ -137,7 +133,7 @@ Callbacks = {
             .appendTo(div);
         var submit = $("<button/>").addClass("btn btn-xs btn-default btn-block")
             .css("margin-top", "5px")
-            .text("Отправить")
+            .text("Submit")
             .appendTo(div);
         var parent = chatDialog(div);
         parent.attr("id", "needpw");
@@ -183,12 +179,12 @@ Callbacks = {
                 div.parent().remove();
             })
             .html("&times;");
-        $("<h4/>").appendTo(div).text("Свободная касса!");
+        $("<h4/>").appendTo(div).text("Unregistered channel");
         $("<p/>").appendTo(div)
-            .html("Эта комната никем не зарегистрирована. Вы можете пользоваться ей и " +
-                  "дальше, но некоторые возможности будут ограничены. Если вы хотите " +
-                  "зарегистрировать эту комнату и стать ее владельцем, посетите страницу " +
-                  "<a href='/account/channels'>Мои комнаты</a>.");
+            .html("This channel is not registered to a CyTube account.  You can still " +
+                  "use it, but some features will not be available.  To register a " +
+                  "channel to your account, visit your <a href='/account/channels'>" +
+                  "channels</a> page.");
     },
 
     setMotd: function(motd) {
@@ -380,7 +376,7 @@ Callbacks = {
             setupChanlogFilter(data.data);
             filterChannelLog();
         } else {
-            $("#cs-chanlog-text").text("Ошибка чтения лога комнаты");
+            $("#cs-chanlog-text").text("Error reading channel log");
         }
     },
 
@@ -409,7 +405,7 @@ Callbacks = {
             $("<a/>").addClass("dropdown-toggle")
                 .attr("data-toggle", "dropdown")
                 .attr("href", "javascript:void(0)")
-                .html("Ранг <b class='caret'></b>")
+                .html("Set Rank <b class='caret'></b>")
                 .appendTo(li);
             var menu = $("<ul/>").addClass("dropdown-menu")
                 .appendTo(li);
@@ -424,11 +420,11 @@ Callbacks = {
                     .appendTo(li);
             }
 
-            addRank(0, "<span class='userlist_guest'>Гость</span>");
-            addRank(1, "<span>Пользователь</span>");
-            addRank(2, "<span class='userlist_op'>Модератор комнаты</span>");
-            addRank(3, "<span class='userlist_owner'>Владелец комнаты</span>");
-            addRank(255, "<span class='userlist_siteadmin'>Администратор</span>");
+            addRank(0, "<span class='userlist_guest'>Guest</span>");
+            addRank(1, "<span>Registered</span>");
+            addRank(2, "<span class='userlist_op'>Moderator</span>");
+            addRank(3, "<span class='userlist_owner'>Admin</span>");
+            addRank(255, "<span class='userlist_siteadmin'>Superadmin</span>");
         }
     },
 
@@ -451,7 +447,10 @@ Callbacks = {
     /* REGION Chat */
     usercount: function(count) {
         CHANNEL.usercount = count;
-        var text = count + " онлайн";
+        var text = count + " connected user";
+        if(count != 1) {
+            text += "s";
+        }
         $("#usercount").text(text);
     },
 
@@ -628,16 +627,6 @@ Callbacks = {
         }
     },
 
-    setUserIcon: function (data) {
-        var user = findUserlistItem(data.name);
-        if (user === null) {
-            return;
-        }
-
-        user.data("icon", data.icon);
-        formatUserlistItem(user);
-    },
-
     userLeave: function(data) {
         var user = findUserlistItem(data.name);
         if(user !== null)
@@ -668,8 +657,8 @@ Callbacks = {
         for(var i = 0; i < data.length; i++) {
             var li = makeQueueEntry(data[i], false);
             li.attr("title", data[i].queueby
-                                ? ("Добавил " + data[i].queueby)
-                                : "Добавил аноним");
+                                ? ("Added by: " + data[i].queueby)
+                                : "Added by: Unknown");
             li.appendTo(q);
         }
 
@@ -693,8 +682,8 @@ Callbacks = {
             li.hide();
             var q = $("#queue");
             li.attr("title", data.item.queueby
-                                ? ("Добавил " + data.item.queueby)
-                                : "Добавил аноним");
+                                ? ("Added by: " + data.item.queueby)
+                                : "Added by: Unknown");
             if (data.after === "prepend") {
                 li.prependTo(q);
                 li.show("fade", function () {
@@ -744,12 +733,12 @@ Callbacks = {
         var btn = li.find(".qbtn-tmp");
         if(btn.length > 0) {
             if(data.temp) {
-                btn.html(btn.html().replace("Открепить",
-                                            "Закрепить"));
+                btn.html(btn.html().replace("Make Temporary",
+                                            "Make Permanent"));
             }
             else {
-                btn.html(btn.html().replace("Закрепить",
-                                            "Открепить"));
+                btn.html(btn.html().replace("Make Permanent",
+                                            "Make Temporary"));
             }
         }
     },
@@ -802,9 +791,9 @@ Callbacks = {
         function loadNext() {
             if (!PLAYER || data.type !== PLAYER.mediaType) {
                 loadMediaPlayer(data);
+            } else {
+                handleMediaUpdate(data);
             }
-
-            handleMediaUpdate(data);
         }
 
         // Persist the user's volume preference from the the player, if possible
@@ -838,7 +827,7 @@ Callbacks = {
             $("#voteskip").attr("disabled", false);
         }
 
-        $("#currenttitle").text(data.title);
+        $("#currenttitle").text("Currently Playing: " + data.title);
     },
 
     mediaUpdate: function(data) {
@@ -857,7 +846,7 @@ Callbacks = {
         if(CHANNEL.openqueue) {
             $("#qlockbtn").removeClass("btn-danger")
                 .addClass("btn-success")
-                .attr("title", "Очередь открыта");
+                .attr("title", "Playlist Unlocked");
             $("#qlockbtn").find("span")
                 .removeClass("glyphicon-lock")
                 .addClass("glyphicon-ok");
@@ -865,7 +854,7 @@ Callbacks = {
         else {
             $("#qlockbtn").removeClass("btn-success")
                 .addClass("btn-danger")
-                .attr("title", "Очередь закрыта");
+                .attr("title", "Playlist Locked");
             $("#qlockbtn").find("span")
                 .removeClass("glyphicon-ok")
                 .addClass("glyphicon-lock");
@@ -879,7 +868,7 @@ Callbacks = {
         $("<button/>").addClass("btn btn-default btn-sm btn-block")
             .css("margin-left", "0")
             .attr("id", "search_clear")
-            .text("Очистить")
+            .text("Clear Results")
             .click(function() {
                 clearSearchResults();
             })
@@ -914,7 +903,7 @@ Callbacks = {
     newPoll: function(data) {
         Callbacks.closePoll();
         var pollMsg = $("<div/>").addClass("poll-notify")
-            .html(data.initiator + " создал опрос: \"" + data.title + "\"")
+            .html(data.initiator + " opened a poll: \"" + data.title + "\"")
             .appendTo($("#messagebuffer"));
         scrollChat();
 
@@ -923,7 +912,7 @@ Callbacks = {
             .appendTo(poll)
             .click(function() { poll.remove(); });
         if(hasPermission("pollctl")) {
-            $("<button/>").addClass("btn btn-danger btn-sm pull-right").text("Завершить опрос")
+            $("<button/>").addClass("btn btn-danger btn-sm pull-right").text("End Poll")
                 .appendTo(poll)
                 .click(function() {
                     socket.emit("closePoll")

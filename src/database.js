@@ -11,13 +11,21 @@ import { Summary, Counter } from 'prom-client';
 
 const LOGGER = require('@calzoneman/jsli')('database');
 const queryLatency = new Summary({
-    name: 'cytube_db_query_latency',
+    name: 'cytube_db_query_duration_seconds',
     help: 'DB query latency (including time spent acquiring connections)'
 });
 const queryCount = new Counter({
-    name: 'cytube_db_query_count',
+    name: 'cytube_db_queries_total',
     help: 'DB query count'
 });
+const queryErrorCount = new Counter({
+    name: 'cytube_db_query_errors_total',
+    help: 'DB query error count'
+});
+
+setInterval(() => {
+    queryLatency.reset();
+}, 5 * 60 * 1000).unref();
 
 let db = null;
 let globalBanDB = null;
@@ -51,10 +59,13 @@ class Database {
     runTransaction(fn) {
         const timer = Metrics.startTimer('db:queryTime');
         const end = queryLatency.startTimer();
-        return this.knex.transaction(fn).finally(() => {
+        return this.knex.transaction(fn).catch(error => {
+            queryErrorCount.inc(1);
+            throw error;
+        }).finally(() => {
             end();
             Metrics.stopTimer(timer);
-            queryCount.inc();
+            queryCount.inc(1);
         });
     }
 }
@@ -120,14 +131,36 @@ module.exports.query = function (query, sub, callback) {
         console.log(query);
     }
 
+    const end = queryLatency.startTimer();
     db.knex.raw(query, sub)
         .then(res => {
             process.nextTick(callback, null, res[0]);
         }).catch(error => {
-            LOGGER.error('Legacy DB query failed.  Query: %s, Substitutions: %j, Error: %s', query, sub, error);
+            queryErrorCount.inc(1);
+
+            let subs = JSON.stringify(sub);
+            if (subs.length > 100) {
+                subs = subs.substring(0, 100) + '...';
+            }
+
+            // Attempt to strip off the beginning of the message which
+            // contains the entire substituted SQL query (followed by an
+            // error code)
+            // Thanks MySQL/MariaDB...
+            error.message = error.message.replace(/^.* - ER/, 'ER');
+
+            LOGGER.error(
+                'Legacy DB query failed.  Query: %s, Substitutions: %s, ' +
+                'Error: %s',
+                query,
+                subs,
+                error
+            );
             process.nextTick(callback, 'Database failure', null);
         }).finally(() => {
+            end();
             Metrics.stopTimer(timer);
+            queryCount.inc(1);
         });
 };
 

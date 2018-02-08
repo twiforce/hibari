@@ -49,10 +49,14 @@
     },
 
     root.isValidUserName = function (name) {
-        return name.match(/^([\w-]{1,20}$|[а-яА-Я_-]{1,20}$)/);
+        return name.match(/^[\w-]{1,20}$/);
     },
 
     root.isValidEmail = function (email) {
+        if (typeof email !== "string") {
+            return false;
+        }
+
         if (email.length > 255) {
             return false;
         }
@@ -220,8 +224,6 @@
                 return "https://vimeo.com/" + id;
             case "dm":
                 return "https://dailymotion.com/video/" + id;
-            case "vm":
-                return "https://vid.me/" + id;
             case "sc":
                 return id;
             case "li":
@@ -246,6 +248,8 @@
                 return "https://streamable.com/" + id;
             case "tc":
                 return "https://clips.twitch.tv/" + id;
+            case "cm":
+                return id;
             default:
                 return "";
         }

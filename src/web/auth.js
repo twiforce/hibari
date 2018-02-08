@@ -18,6 +18,24 @@ var csrf = require("./csrf");
 
 const LOGGER = require('@calzoneman/jsli')('web/auth');
 
+function getSafeReferrer(req) {
+    const referrer = req.header('referer');
+
+    if (!referrer) {
+        return null;
+    }
+
+    const { hostname } = url.parse(referrer);
+
+    // TODO: come back to this when refactoring http alt domains
+    if (hostname === Config.get('http.root-domain')
+            || Config.get('http.alt-domains').includes(hostname)) {
+        return referrer;
+    } else {
+        return null;
+    }
+}
+
 /**
  * Processes a login request.  Sets a cookie upon successful authentication
  */
@@ -27,7 +45,7 @@ function handleLogin(req, res) {
     var name = req.body.name;
     var password = req.body.password;
     var rememberMe = req.body.remember;
-    var dest = req.body.dest || req.header("referer") || null;
+    var dest = req.body.dest || getSafeReferrer(req) || null;
     dest = dest && dest.match(/login|logout/) ? null : dest;
 
     if (typeof name !== "string" || typeof password !== "string") {
@@ -36,6 +54,7 @@ function handleLogin(req, res) {
     }
 
     var host = req.hostname;
+    // TODO: remove this check from /login, make it generic middleware
     if (host.indexOf(Config.get("http.root-domain")) === -1 &&
             Config.get("http.alt-domains").indexOf(host) === -1) {
         LOGGER.warn("Attempted login from non-approved domain " + host);
@@ -92,17 +111,13 @@ function handleLogin(req, res) {
  * Handles a GET request for /login
  */
 function handleLoginPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     if (res.locals.loggedIn) {
         return sendPug(res, "login", {
             wasAlreadyLoggedIn: true
         });
     }
 
-    var redirect = req.query.dest || req.header("referer");
+    var redirect = getSafeReferrer(req);
     var locals = {};
     if (!/\/register/.test(redirect)) {
         locals.redirect = redirect;
@@ -120,7 +135,7 @@ function handleLogout(req, res) {
     res.clearCookie("auth");
     res.locals.loggedIn = res.locals.loginName = res.locals.superadmin = false;
     // Try to find an appropriate redirect
-    var dest = req.body.dest || req.header("referer");
+    var dest = req.body.dest || getSafeReferrer(req);
     dest = dest && dest.match(/login|logout|account/) ? null : dest;
 
     var host = req.hostname;
@@ -139,10 +154,6 @@ function handleLogout(req, res) {
  * Handles a GET request for /register
  */
 function handleRegisterPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     if (res.locals.loggedIn) {
         sendPug(res, "register", {});
         return;

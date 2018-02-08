@@ -1,12 +1,12 @@
 var fs = require("fs");
 var path = require("path");
-var nodemailer = require("nodemailer");
 var net = require("net");
 var YAML = require("yamljs");
 
 import { loadFromToml } from './configuration/configloader';
 import { CamoConfig } from './configuration/camoconfig';
 import { PrometheusConfig } from './configuration/prometheusconfig';
+import { EmailConfig } from './configuration/emailconfig';
 
 const LOGGER = require('@calzoneman/jsli')('config');
 
@@ -32,7 +32,6 @@ var defaults = {
         }
     ],
     http: {
-        domain: "http://localhost",
         "default-port": 8080,
         "root-domain": "localhost",
         "alt-domains": ["127.0.0.1"],
@@ -56,21 +55,12 @@ var defaults = {
         passphrase: "",
         certfile: "localhost.cert",
         cafile: "",
-        ciphers: "HIGH:!DSS:!aNULL@STRENGTH",
-        redirect: true
+        ciphers: "HIGH:!DSS:!aNULL@STRENGTH"
     },
     io: {
         domain: "http://localhost",
         "default-port": 1337,
-        "ip-connection-limit": 10,
-        "per-message-deflate": false
-    },
-    mail: {
-        enabled: false,
-        /* the key "config" is omitted because the format depends on the
-           service the owner is configuring for nodemailer */
-        "from-address": "some.user@gmail.com",
-        "from-name": "CyTube Services"
+        "ip-connection-limit": 10
     },
     "youtube-v3-key": "",
     "channel-blacklist": [],
@@ -142,6 +132,7 @@ function merge(obj, def, path) {
 var cfg = defaults;
 let camoConfig = new CamoConfig();
 let prometheusConfig = new PrometheusConfig();
+let emailConfig = new EmailConfig();
 
 /**
  * Initializes the configuration from the given YAML file
@@ -172,100 +163,87 @@ exports.load = function (file) {
         return;
     }
 
-    var mailconfig = {};
-    if (cfg.mail && cfg.mail.config) {
-        mailconfig = cfg.mail.config;
-        delete cfg.mail.config;
+    if (cfg.mail) {
+        LOGGER.error(
+            'Old style mail configuration found in config.yaml.  ' +
+            'Email will not be delivered unless you copy conf/example/email.toml ' +
+            'to conf/email.toml and edit it to your liking.  ' +
+            'To remove this warning, delete the "mail:" block in config.yaml.'
+        );
     }
+
     merge(cfg, defaults, "config");
-    cfg.mail.config = mailconfig;
 
     preprocessConfig(cfg);
     LOGGER.info("Loaded configuration from " + file);
 
     loadCamoConfig();
     loadPrometheusConfig();
+    loadEmailConfig();
 };
 
-function loadCamoConfig() {
+function checkLoadConfig(configClass, filename) {
     try {
-        camoConfig = loadFromToml(CamoConfig,
-                                  path.resolve(__dirname, '..', 'conf', 'camo.toml'));
-        const enabled = camoConfig.isEnabled() ? 'ENABLED' : 'DISABLED';
-        LOGGER.info(`Loaded camo configuration from conf/camo.toml.  Camo is ${enabled}`);
+        return loadFromToml(
+            configClass,
+            path.resolve(__dirname, '..', 'conf', filename)
+        );
     } catch (error) {
         if (error.code === 'ENOENT') {
-            LOGGER.info('No camo configuration found, chat images will not be proxied.');
-            camoConfig = new CamoConfig();
-            return;
+            return null;
         }
 
         if (typeof error.line !== 'undefined') {
-            LOGGER.error(`Error in conf/camo.toml: ${error} (line ${error.line})`);
+            LOGGER.error(`Error in conf/${fileanme}: ${error} (line ${error.line})`);
         } else {
-            LOGGER.error(`Error loading conf/camo.toml: ${error.stack}`);
+            LOGGER.error(`Error loading conf/${filename}: ${error.stack}`);
         }
     }
 }
 
-function loadPrometheusConfig() {
-    try {
-        prometheusConfig = loadFromToml(PrometheusConfig,
-                path.resolve(__dirname, '..', 'conf', 'prometheus.toml'));
-        const enabled = prometheusConfig.isEnabled() ? 'ENABLED' : 'DISABLED';
-        LOGGER.info('Loaded prometheus configuration from conf/prometheus.toml.  '
-                + `Prometheus listener is ${enabled}`);
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            LOGGER.info('No prometheus configuration found, defaulting to disabled');
-            prometheusConfig = new PrometheusConfig();
-            return;
-        }
+function loadCamoConfig() {
+    const conf = checkLoadConfig(CamoConfig, 'camo.toml');
 
-        if (typeof error.line !== 'undefined') {
-            LOGGER.error(`Error in conf/prometheus.toml: ${error} (line ${error.line})`);
-        } else {
-            LOGGER.error(`Error loading conf/prometheus.toml: ${error.stack}`);
-        }
+    if (conf === null) {
+        LOGGER.info('No camo configuration found, chat images will not be proxied.');
+        camoConfig = new CamoConfig();
+    } else {
+        camoConfig = conf;
+        const enabled = camoConfig.isEnabled() ? 'ENABLED' : 'DISABLED';
+        LOGGER.info(`Loaded camo configuration from conf/camo.toml.  Camo is ${enabled}`);
+    }
+}
+
+function loadPrometheusConfig() {
+    const conf = checkLoadConfig(PrometheusConfig, 'prometheus.toml');
+
+    if (conf === null) {
+        LOGGER.info('No prometheus configuration found, defaulting to disabled');
+        prometheusConfig = new PrometheusConfig();
+    } else {
+        prometheusConfig = conf;
+        const enabled = prometheusConfig.isEnabled() ? 'ENABLED' : 'DISABLED';
+        LOGGER.info(
+            'Loaded prometheus configuration from conf/prometheus.toml.  ' +
+            `Prometheus listener is ${enabled}`
+        );
+    }
+}
+
+function loadEmailConfig() {
+    const conf = checkLoadConfig(EmailConfig, 'email.toml');
+
+    if (conf === null) {
+        LOGGER.info('No email configuration found, defaulting to disabled');
+        emailConfig = new EmailConfig();
+    } else {
+        emailConfig = conf;
+        LOGGER.info('Loaded email configuration from conf/email.toml.');
     }
 }
 
 // I'm sorry
 function preprocessConfig(cfg) {
-    /* Detect 3.0.0-style config and warng the user about it */
-    if ("host" in cfg.http || "port" in cfg.http || "port" in cfg.https) {
-        LOGGER.warn("The method of specifying which IP/port to bind has "+
-                          "changed.  The config loader will try to handle this "+
-                          "automatically, but you should read config.template.yaml "+
-                          "and change your config.yaml to the new format.");
-        cfg.listen = [
-            {
-                ip: cfg.http.host || "0.0.0.0",
-                port: cfg.http.port,
-                http: true
-            },
-            {
-                ip: cfg.http.host || "0.0.0.0",
-                port: cfg.io.port,
-                io: true
-            }
-        ];
-
-        if (cfg.https.enabled) {
-            cfg.listen.push(
-                {
-                    ip: cfg.http.host || "0.0.0.0",
-                    port: cfg.https.port,
-                    https: true,
-                    io: true
-                }
-            );
-        }
-
-        cfg.http["default-port"] = cfg.http.port;
-        cfg.https["default-port"] = cfg.https.port;
-        cfg.io["default-port"] = cfg.io.port;
-    }
     // Root domain should start with a . for cookies
     var root = cfg.http["root-domain"];
     root = root.replace(/^\.*/, "");
@@ -275,11 +253,6 @@ function preprocessConfig(cfg) {
     }
     cfg.http["root-domain-dotted"] = root;
 
-    // Setup nodemailer
-    cfg.mail.nodemailer = nodemailer.createTransport(
-        cfg.mail.config
-    );
-
     // Debug
     if (process.env.DEBUG === "1" || process.env.DEBUG === "true") {
         cfg.debug = true;
@@ -288,26 +261,7 @@ function preprocessConfig(cfg) {
     }
 
     // Strip trailing slashes from domains
-    cfg.http.domain = cfg.http.domain.replace(/\/*$/, "");
     cfg.https.domain = cfg.https.domain.replace(/\/*$/, "");
-
-    // HTTP/HTTPS domains with port numbers
-    if (!cfg.http["full-address"]) {
-        var httpfa = cfg.http.domain;
-        if (cfg.http["default-port"] !== 80) {
-            httpfa += ":" + cfg.http["default-port"];
-        }
-        cfg.http["full-address"] = httpfa;
-    }
-
-    if (!cfg.https["full-address"]) {
-        var httpsfa = cfg.https.domain;
-        if (cfg.https["default-port"] !== 443) {
-            httpsfa += ":" + cfg.https["default-port"];
-        }
-        cfg.https["full-address"] = httpsfa;
-    }
-
 
     // Socket.IO URLs
     cfg.io["ipv4-nossl"] = "";
@@ -374,20 +328,6 @@ function preprocessConfig(cfg) {
 
     cfg.io["ipv4-default"] = cfg.io["ipv4-ssl"] || cfg.io["ipv4-nossl"];
     cfg.io["ipv6-default"] = cfg.io["ipv6-ssl"] || cfg.io["ipv6-nossl"];
-
-    // sioconfig
-    // TODO this whole thing is messy, need to redo how the socket address is sent
-    var sioconfigjson = {
-        "ipv4-nossl": cfg.io["ipv4-nossl"],
-        "ipv4-ssl": cfg.io["ipv4-ssl"],
-        "ipv6-nossl": cfg.io["ipv6-nossl"],
-        "ipv6-ssl": cfg.io["ipv6-ssl"]
-    };
-
-    var sioconfig = JSON.stringify(sioconfigjson);
-    sioconfig = "var IO_URLS=" + sioconfig + ";";
-    cfg.sioconfigjson = sioconfigjson;
-    cfg.sioconfig = sioconfig;
 
     // Generate RegExps for reserved names
     var reserved = cfg["reserved-names"];
@@ -502,4 +442,8 @@ exports.getCamoConfig = function getCamoConfig() {
 
 exports.getPrometheusConfig = function getPrometheusConfig() {
     return prometheusConfig;
+};
+
+exports.getEmailConfig = function getEmailConfig() {
+    return emailConfig;
 };

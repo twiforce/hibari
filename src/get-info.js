@@ -8,16 +8,16 @@ var ffmpeg = require("./ffmpeg");
 var mediaquery = require("cytube-mediaquery");
 var YouTube = require("cytube-mediaquery/lib/provider/youtube");
 var Vimeo = require("cytube-mediaquery/lib/provider/vimeo");
-//var Vidme = require("cytube-mediaquery/lib/provider/vidme");
 var Streamable = require("cytube-mediaquery/lib/provider/streamable");
 var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
 var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
 var TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
 import { Counter } from 'prom-client';
+import { lookup as lookupCustomMetadata } from './custom-media';
 
 const LOGGER = require('@calzoneman/jsli')('get-info');
 const lookupCounter = new Counter({
-    name: 'cytube_media_lookup_count',
+    name: 'cytube_media_lookups_total',
     help: 'Count of media lookups',
     labelNames: ['shortCode']
 });
@@ -467,6 +467,11 @@ var Getters = {
 
     /* google docs */
     gd: function (id, callback) {
+        if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+            callback("Invalid ID: " + id);
+            return;
+        }
+
         var data = {
             type: "googledrive",
             kind: "single",
@@ -510,20 +515,12 @@ var Getters = {
     },
 
     /* vid.me */
-    /*vm: function (id, callback) {
-        if (!/^[\w-]+$/.test(id)) {
-            process.nextTick(callback, "Invalid vid.me ID");
-            return;
-        }
-
-        Vidme.lookup(id).then(video => {
-            const media = new Media(video.id, video.title, video.duration,
-                                    "vm", video.meta);
-            process.nextTick(callback, false, media);
-        }).catch(function (err) {
-            callback(err.message || err, null);
-        });
-    },*/
+    vm: function (id, callback) {
+        process.nextTick(
+            callback,
+            "As of December 2017, vid.me is no longer in service."
+        );
+    },
 
     /* streamable */
     sb: function (id, callback) {
@@ -539,6 +536,16 @@ var Getters = {
         }).catch(function (err) {
             callback(err.message || err, null);
         });
+    },
+
+    /* custom media - https://github.com/calzoneman/sync/issues/655 */
+    cm: async function (id, callback) {
+        try {
+            const media = await lookupCustomMetadata(id);
+            process.nextTick(callback, false, media);
+        } catch (error) {
+            process.nextTick(callback, error.message);
+        }
     }
 };
 
@@ -547,7 +554,7 @@ module.exports = {
     getMedia: function (id, type, callback) {
         if(type in this.Getters) {
             LOGGER.info("Looking up %s:%s", type, id);
-            lookupCounter.labels(type).inc();
+            lookupCounter.labels(type).inc(1, new Date());
             this.Getters[type](id, callback);
         } else {
             callback("Unknown media type '" + type + "'", null);

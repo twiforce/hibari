@@ -15,17 +15,42 @@ var session = require("../session");
 var csrf = require("./csrf");
 const url = require("url");
 
-const LOGGER = require('@calzoneman/jsli')('database/accounts');
+const LOGGER = require('@calzoneman/jsli')('web/accounts');
+
+let globalMessageBus;
+let emailConfig;
+let emailController;
 
 /**
  * Handles a GET request for /account/edit
  */
 function handleAccountEditPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
+    sendPug(res, "account-edit", {});
+}
+
+function verifyReferrer(req, expected) {
+    const referrer = req.header('referer');
+
+    if (!referrer) {
+        return true;
     }
 
-    sendPug(res, "account-edit", {});
+    try {
+        const parsed = url.parse(referrer);
+
+        if (parsed.pathname !== expected) {
+            LOGGER.warn(
+                'Possible attempted forgery: %s POSTed to %s',
+                referrer,
+                expected
+            );
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        return false;
+    }
 }
 
 /**
@@ -33,6 +58,11 @@ function handleAccountEditPage(req, res) {
  */
 function handleAccountEdit(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/edit')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     var action = req.body.action;
     switch(action) {
@@ -43,7 +73,7 @@ function handleAccountEdit(req, res) {
             handleChangeEmail(req, res);
             break;
         default:
-            res.send(400);
+            res.sendStatus(400);
             break;
     }
 }
@@ -65,7 +95,7 @@ async function handleChangePassword(req, res) {
 
     if (newpassword.length === 0) {
         sendPug(res, "account-edit", {
-            errorMessage: "Новый пароль не должен быть пустым."
+            errorMessage: "New password must not be empty"
         });
         return;
     }
@@ -73,7 +103,7 @@ async function handleChangePassword(req, res) {
     const reqUser = await webserver.authorize(req);
     if (!reqUser) {
         sendPug(res, "account-edit", {
-            errorMessage: "Вы должны авторизоваться для того, чтобы изменить свой пароль."
+            errorMessage: "You must be logged in to change your password"
         });
         return;
     }
@@ -117,7 +147,7 @@ async function handleChangePassword(req, res) {
                     webserver.setAuthCookie(req, res, expiration, auth);
 
                     sendPug(res, "account-edit", {
-                        successMessage: "Пароль успешно изменён."
+                        successMessage: "Password changed."
                     });
                 });
             });
@@ -142,7 +172,7 @@ function handleChangeEmail(req, res) {
 
     if (!$util.isValidEmail(email) && email !== "") {
         sendPug(res, "account-edit", {
-            errorMessage: "Неверный адрес email"
+            errorMessage: "Invalid email address"
         });
         return;
     }
@@ -166,7 +196,7 @@ function handleChangeEmail(req, res) {
                                 " changed email for " + name +
                                 " to " + email);
             sendPug(res, "account-edit", {
-                successMessage: "Адрес email изменён."
+                successMessage: "Email address changed."
             });
         });
     });
@@ -176,10 +206,6 @@ function handleChangeEmail(req, res) {
  * Handles a GET request for /account/channels
  */
 async function handleAccountChannelPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     const user = await webserver.authorize(req);
     // TODO: error message
     if (!user) {
@@ -200,6 +226,11 @@ async function handleAccountChannelPage(req, res) {
  */
 function handleAccountChannel(req, res) {
     csrf.verify(req);
+
+    if (!verifyReferrer(req, '/account/channels')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
 
     var action = req.body.action;
     switch(action) {
@@ -246,7 +277,7 @@ async function handleNewChannel(req, res) {
         if (name.match(Config.get("reserved-names.channels"))) {
             sendPug(res, "account-channels", {
                 channels: channels,
-                newChannelError: "Эту комнату сейчас нельзя зарегистрировать."
+                newChannelError: "That channel name is reserved"
             });
             return;
         }
@@ -255,8 +286,8 @@ async function handleNewChannel(req, res) {
                 && user.global_rank < 255) {
             sendPug(res, "account-channels", {
                 channels: channels,
-                newChannelError: "Вам нельзя регистрировать более " +
-                                 Config.get("max-channels-per-user") + " комнат."
+                newChannelError: "You are not allowed to register more than " +
+                                 Config.get("max-channels-per-user") + " channels."
             });
             return;
         }
@@ -266,18 +297,10 @@ async function handleNewChannel(req, res) {
                 Logger.eventlog.log("[channel] " + user.name + "@" +
                                     req.realIP +
                                     " registered channel " + name);
-                var sv = Server.getServer();
-                if (sv.isChannelLoaded(name)) {
-                    var chan = sv.getChannel(name);
-                    var users = Array.prototype.slice.call(chan.users);
-                    users.forEach(function (u) {
-                        u.kick("Комната перезагружается");
-                    });
+                globalMessageBus.emit('ChannelRegistered', {
+                    channel: name
+                });
 
-                    if (!chan.dead) {
-                        chan.emit("empty");
-                    }
-                }
                 channels.push({
                     name: name
                 });
@@ -324,7 +347,7 @@ async function handleDeleteChannel(req, res) {
             db.channels.listUserChannels(user.name, function (err2, channels) {
                 sendPug(res, "account-channels", {
                     channels: err2 ? [] : channels,
-                    deleteChannelError: "У вас нет прав для удаления этой комнаты."
+                    deleteChannelError: "You do not have permission to delete this channel"
                 });
             });
             return;
@@ -336,19 +359,11 @@ async function handleDeleteChannel(req, res) {
                                     req.realIP + " deleted channel " +
                                     name);
             }
-            var sv = Server.getServer();
-            if (sv.isChannelLoaded(name)) {
-                var chan = sv.getChannel(name);
-                chan.clearFlag(require("../flags").C_REGISTERED);
-                var users = Array.prototype.slice.call(chan.users);
-                users.forEach(function (u) {
-                    u.kick("Комната перезагружается");
-                });
 
-                if (!chan.dead) {
-                    chan.emit("empty");
-                }
-            }
+            globalMessageBus.emit('ChannelDeleted', {
+                channel: name
+            });
+
             db.channels.listUserChannels(user.name, function (err2, channels) {
                 sendPug(res, "account-channels", {
                     channels: err2 ? [] : channels,
@@ -363,10 +378,6 @@ async function handleDeleteChannel(req, res) {
  * Handles a GET request for /account/profile
  */
 async function handleAccountProfilePage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     const user = await webserver.authorize(req);
     // TODO: error message
     if (!user) {
@@ -419,13 +430,18 @@ function validateProfileImage(image, callback) {
 async function handleAccountProfile(req, res) {
     csrf.verify(req);
 
+    if (!verifyReferrer(req, '/account/profile')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
+
     const user = await webserver.authorize(req);
     // TODO: error message
     if (!user) {
         return sendPug(res, "account-profile", {
             profileImage: "",
             profileText: "",
-            profileError: "Для того, чтобы редактировать свой профиль, вам нужно авторизоваться."
+            profileError: "You must be logged in to edit your profile",
         });
     }
 
@@ -455,6 +471,14 @@ async function handleAccountProfile(req, res) {
                 return;
             }
 
+            globalMessageBus.emit('UserProfileChanged', {
+                user: user.name,
+                profile: {
+                    image,
+                    text
+                }
+            });
+
             sendPug(res, "account-profile", {
                 profileImage: image,
                 profileText: text,
@@ -468,10 +492,6 @@ async function handleAccountProfile(req, res) {
  * Handles a GET request for /account/passwordreset
  */
 function handlePasswordResetPage(req, res) {
-    if (webserver.redirectHttps(req, res)) {
-        return;
-    }
-
     sendPug(res, "account-passwordreset", {
         reset: false,
         resetEmail: "",
@@ -485,6 +505,11 @@ function handlePasswordResetPage(req, res) {
 function handlePasswordReset(req, res) {
     csrf.verify(req);
 
+    if (!verifyReferrer(req, '/account/passwordreset')) {
+        res.status(403).send('Mismatched referrer');
+        return;
+    }
+
     var name = req.body.name,
         email = req.body.email;
 
@@ -497,7 +522,7 @@ function handlePasswordReset(req, res) {
         sendPug(res, "account-passwordreset", {
             reset: false,
             resetEmail: "",
-            resetErr: "Неправильное имя пользователя '" + name + "'"
+            resetErr: "Invalid username '" + name + "'"
         });
         return;
     }
@@ -516,15 +541,15 @@ function handlePasswordReset(req, res) {
             sendPug(res, "account-passwordreset", {
                 reset: false,
                 resetEmail: "",
-                resetErr: "Введённый email не совпадает с тем, который указан в профиле " + name
+                resetErr: "Provided email does not match the email address on record for " + name
             });
             return;
         } else if (actualEmail === "") {
             sendPug(res, "account-passwordreset", {
                 reset: false,
                 resetEmail: "",
-                resetErr: name + " не привязывал email к своей учётной записи. Обратитесь к администратору, " +
-                          "чтобы сбросить пароль вручную."
+                resetErr: name + " doesn't have an email address on record.  Please contact an " +
+                          "administrator to manually reset your password."
             });
             return;
         }
@@ -553,7 +578,7 @@ function handlePasswordReset(req, res) {
             Logger.eventlog.log("[account] " + ip + " requested password recovery for " +
                                 name + " <" + email + ">");
 
-            if (!Config.get("mail.enabled")) {
+            if (!emailConfig.getPasswordReset().isEnabled()) {
                 sendPug(res, "account-passwordreset", {
                     reset: false,
                     resetEmail: email,
@@ -563,37 +588,26 @@ function handlePasswordReset(req, res) {
                 return;
             }
 
-            var msg = "Кто-то (надеемся, что это были вы) отправил запрос на" +
-                      " изменение пароля для профиля "+ name + ". Если это были не вы, " +
-                      "можете проигнорировать это письмо, или даже удалить его. "+
-                      "Для того, чтобы изменить пароль на сайте " + Config.get("http.domain") +
-                      ", скопируйте и вставьте эту ссылку в адресную строку вашего браузера: " +
-                      Config.get("http.domain") + "/account/passwordrecover/"+hash +
-                      " — данная ссылка будет действительна 24 часа. ";
+            const baseUrl = `${req.realProtocol}://${req.header("host")}`;
 
-            var mail = {
-                from: Config.get("mail.from-name") + " <" + Config.get("mail.from-address") + ">",
-                to: email,
-                subject: "Запрос на изменение пароля",
-                text: msg
-            };
-
-            Config.get("mail.nodemailer").sendMail(mail, function (err, response) {
-                if (err) {
-                    LOGGER.error("mail fail: " + err);
-                    sendPug(res, "account-passwordreset", {
-                        reset: false,
-                        resetEmail: email,
-                        resetErr: "Sending reset email failed.  Please contact an " +
-                                  "administrator for assistance."
-                    });
-                } else {
-                    sendPug(res, "account-passwordreset", {
-                        reset: true,
-                        resetEmail: email,
-                        resetErr: false
-                    });
-                }
+            emailController.sendPasswordReset({
+                username: name,
+                address: email,
+                url: `${baseUrl}/account/passwordrecover/${hash}`
+            }).then(result => {
+                sendPug(res, "account-passwordreset", {
+                    reset: true,
+                    resetEmail: email,
+                    resetErr: false
+                });
+            }).catch(error => {
+                LOGGER.error("Sending password reset email failed: %s", error);
+                sendPug(res, "account-passwordreset", {
+                    reset: false,
+                    resetEmail: email,
+                    resetErr: "Sending reset email failed.  Please contact an " +
+                              "administrator for assistance."
+                });
             });
         });
     });
@@ -623,7 +637,9 @@ function handlePasswordRecover(req, res) {
         if (Date.now() >= row.expire) {
             sendPug(res, "account-passwordrecover", {
                 recovered: false,
-                recoverErr: "Срок действия ссылки истёк. Пожалуйста, отправьте запрос ещё раз."
+                recoverErr: "This password recovery link has expired.  Password " +
+                            "recovery links are valid only for 24 hours after " +
+                            "submission."
             });
             return;
         }
@@ -637,8 +653,8 @@ function handlePasswordRecover(req, res) {
             if (err) {
                 sendPug(res, "account-passwordrecover", {
                     recovered: false,
-                    recoverErr: "Ошибка базы данных. Если эта ошибка повторяется, сообщите " +
-                                "администратору."
+                    recoverErr: "Database error.  Please contact an administrator if " +
+                                "this persists."
 
                 });
                 return;
@@ -659,7 +675,11 @@ module.exports = {
     /**
      * Initialize the module
      */
-    init: function (app) {
+    init: function (app, _globalMessageBus, _emailConfig, _emailController) {
+        globalMessageBus = _globalMessageBus;
+        emailConfig = _emailConfig;
+        emailController = _emailController;
+
         app.get("/account/edit", handleAccountEditPage);
         app.post("/account/edit", handleAccountEdit);
         app.get("/account/channels", handleAccountChannelPage);

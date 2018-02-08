@@ -1,4 +1,6 @@
-var coffee = require('coffee-script');
+#!/usr/bin/env node
+
+var coffee = require('coffeescript');
 var fs = require('fs');
 var path = require('path');
 
@@ -8,6 +10,8 @@ var order = [
     'youtube.coffee',
     'dailymotion.coffee',
     'videojs.coffee',
+    'playerjs.coffee',
+    'streamable.coffee',
     'gdrive-player.coffee',
     'raw-file.coffee',
     'soundcloud.coffee',

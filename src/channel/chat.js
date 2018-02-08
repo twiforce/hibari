@@ -36,6 +36,7 @@ function ChatModule(channel) {
     this.buffer = [];
     this.muted = new util.Set();
     this.commandHandlers = {};
+    this.supportsDirtyCheck = true;
 
     /* Default commands */
     this.registerCommand("/me", this.handleCmdMe.bind(this));
@@ -69,6 +70,8 @@ ChatModule.prototype.load = function (data) {
             this.muted.add(data.chatmuted[i]);
         }
     }
+
+    this.dirty = false;
 };
 
 ChatModule.prototype.save = function (data) {
@@ -151,13 +154,13 @@ ChatModule.prototype.restrictNewAccount = function restrictNewAccount(user, data
 };
 
 const chatIncomingCount = new Counter({
-    name: 'cytube_chat_incoming_count',
+    name: 'cytube_chat_incoming_total',
     help: 'Number of incoming chatMsg frames'
 });
 ChatModule.prototype.handleChatMsg = function (user, data) {
     var self = this;
     counters.add("chat:incoming");
-    chatIncomingCount.inc();
+    chatIncomingCount.inc(1, new Date());
 
     if (!this.channel || !this.channel.modules.permissions.canChat(user)) {
         return;
@@ -288,7 +291,7 @@ ChatModule.prototype.handlePm = function (user, data) {
 };
 
 const chatSentCount = new Counter({
-    name: 'cytube_chat_sent_count',
+    name: 'cytube_chat_sent_total',
     help: 'Number of broadcast chat messages'
 });
 ChatModule.prototype.processChatMsg = function (user, data) {
@@ -360,7 +363,7 @@ ChatModule.prototype.processChatMsg = function (user, data) {
     }
     this.sendMessage(msgobj);
     counters.add("chat:sent");
-    chatSentCount.inc();
+    chatSentCount.inc(1, new Date());
 };
 
 ChatModule.prototype.formatMessage = function (username, data) {
@@ -441,6 +444,7 @@ ChatModule.prototype.sendModMessage = function (msg, minrank) {
 ChatModule.prototype.sendMessage = function (msgobj) {
     this.channel.broadcastAll("chatMsg", msgobj);
 
+    this.dirty = true;
     this.buffer.push(msgobj);
     if (this.buffer.length > 15) {
         this.buffer.shift();
@@ -492,6 +496,7 @@ ChatModule.prototype.handleCmdClear = function (user, msg, meta) {
         return;
     }
 
+    this.dirty = true;
     this.buffer = [];
     this.channel.broadcastAll("clearchat", { clearedBy: user.getName() });
     this.sendModMessage(user.getName() + " cleared chat.", -1);
@@ -667,6 +672,9 @@ ChatModule.prototype.handleCmdUnmute = function (user, msg, meta) {
     this.muted.remove(name);
     this.muted.remove(SHADOW_TAG + name);
 
+    this.channel.logger.log("[mod] " + user.getName() + " unmuted " + name);
+    this.sendModMessage(user.getName() + " unmuted " + name, muteperm);
+
     var target;
     for (var i = 0; i < this.channel.users.length; i++) {
         if (this.channel.users[i].getLowerName() === name) {
@@ -681,8 +689,6 @@ ChatModule.prototype.handleCmdUnmute = function (user, msg, meta) {
 
     target.clearFlag(Flags.U_MUTED | Flags.U_SMUTED);
     this.channel.sendUserMeta(this.channel.users, target, -1);
-    this.channel.logger.log("[mod] " + user.getName() + " unmuted " + target.getName());
-    this.sendModMessage(user.getName() + " unmuted " + target.getName(), muteperm);
 };
 
 module.exports = ChatModule;

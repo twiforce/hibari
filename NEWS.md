@@ -1,3 +1,91 @@
+2018-01-07
+==========
+
+**Build changes:** When the `babel` dependency was first added to transpile ES6
+code to ES5, an interactive prompt was added to the `postinstall` script before
+transpilation, in case the user had made local modifications to the files in
+`lib` which previously would have been detected as a git conflict when pulling.
+
+It has now been sufficiently long that this is no longer needed, so I've removed
+it.  As always, users wishing to make local modifications (or forks) should edit
+the code in `src/` and run `npm run build-server` to regenerate `lib/`.
+
+This commit also removes the bundled `www/js/player.js` file in favor of having
+`postinstall` generate it from the sources in `player/`.
+
+2017-12-24
+==========
+
+As of December 2017, Vid.me is no longer in service.  Accordingly, Vid.me
+support in CyTube has been deprecated.
+
+2017-11-27
+==========
+
+The Google Drive userscript has been updated once again. Violentmonkey is
+now explicitly supported. Google login redirects are caught and handled.
+See directly below on how to regenerate the user script again.
+
+2017-11-15
+==========
+
+The Google Drive userscript has been updated due to breaking changes in
+Greasemonkey 4.0.  Remember to generate the script by running:
+
+    $ npm run generate-userscript "Your Site Name" http://your-site.example.com/r/*
+
+2017-11-05
+==========
+
+The latest commit introduces a referrer check in the account page handlers.
+This is added as a short-term mitigation for a recent report that account
+management functions (such as deleting channels) can be executed without the
+user's consent if placed in channel JS.
+
+Longer term options are being considered, such as moving account management to a
+separate subdomain to take advantage of cross-origin checks in browsers, and
+requiring the user to re-enter their password to demonstrate intent.  As always,
+I recommend admins take extreme caution when accepting channel JS.
+
+2017-09-26
+==========
+
+**Breaking change:** the `nodemailer` dependency has been upgraded to version
+4.x.  I also took this opportunity to make some modifications to the email
+configuration and move it out of `config.yaml` to `conf/email.toml`.
+
+To upgrade:
+
+  * Run `npm upgrade` (or `rm -rf node_modules; npm install`)
+  * Copy `conf/example/email.toml` to `conf/email.toml`
+  * Edit `conf/email.toml` to your liking
+  * Remove the `mail:` block from `config.yaml`
+
+This feature only supports sending via SMTP for now.  If there is demand for
+other transports, feel free to open an issue or submit a pull request.
+
+2017-09-19
+==========
+
+The `/useragreement` default page has been removed.  Server administrators can
+substitute their own terms of service page by editing `templates/footer.pug`
+
+2017-09-19
+==========
+
+This commit removes an old kludge that redirected users to HTTPS (when enabled)
+specifically for the account authorization pages (e.g., `/login`).  The code for
+doing this was to work around limitations that no longer exist, and does not
+represent current security best practices.
+
+The recommended solution to ensure that users are logged in securely (assuming
+you've configured support for HTTPS) is to use
+[Strict-Transport-Security](https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security)
+to direct browsers to access the HTTPS version of the website at all times.  You
+can enable this by configuring a reverse proxy (e.g. nginx) in front of CyTube
+to intercept HTTP traffic and redirect it to HTTPS, and add the
+`Strict-Transport-Security` header when returning the response from CyTube.
+
 2017-07-22
 ==========
 

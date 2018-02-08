@@ -1,4 +1,5 @@
 var CL_VERSION = 3.0;
+var GS_VERSION = 1.7; // Google Drive Userscript
 
 var CLIENT = {
     rank: -1,
@@ -73,7 +74,7 @@ CyTube.ui = {
     suppressedAnnouncementId: getOpt("suppressed_announcement_id")
 };
 CyTube.featureFlag = {
-    efficientEmotes: false
+    efficientEmotes: true
 };
 
 function getOpt(k) {
@@ -233,5 +234,3 @@ function eraseCookie(name) {
 
 /* to be implemented in callbacks.js */
 function setupCallbacks() { }
-
-window.enableCyTubeGoogleDriveUserscriptDebug = getOrDefault("cytube_drive_debug", false);

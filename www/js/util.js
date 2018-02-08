@@ -30,8 +30,6 @@ function formatURL(data) {
             return "https://vimeo.com/" + data.id;
         case "dm":
             return "https://dailymotion.com/video/" + data.id;
-        case "vm":
-            return "https://vid.me/" + data.id;
         case "sc":
             return data.id;
         case "li":
@@ -56,6 +54,8 @@ function formatURL(data) {
             return "https://streamable.com/" + data.id;
         case "tc":
             return "https://clips.twitch.tv/" + data.id;
+        case "cm":
+            return data.id;
         default:
             return "#";
     }
@@ -148,7 +148,7 @@ function formatUserlistItem(div) {
         }
         if (meta.aliases) {
             $("<br/>").appendTo(profile);
-            $("<em/>").text("алиасы: " + meta.aliases.join(", ")).appendTo(profile);
+            $("<em/>").text("aliases: " + meta.aliases.join(", ")).appendTo(profile);
         }
         $("<hr/>").css("margin-top", "5px").css("margin-bottom", "5px").appendTo(profile);
         $("<p/>").text(data.profile.text).appendTo(profile);
@@ -216,23 +216,23 @@ function addUserDropdown(entry) {
         .appendTo(btngroup)
         .click(function () {
             if(IGNORED.indexOf(name) == -1) {
-                ignore.text("Убрать игнор");
+                ignore.text("Unignore User");
                 IGNORED.push(name);
             } else {
-                ignore.text("Игнорировать");
+                ignore.text("Ignore User");
                 IGNORED.splice(IGNORED.indexOf(name), 1);
             }
         });
     if(IGNORED.indexOf(name) == -1) {
-        ignore.text("Игнорировать");
+        ignore.text("Ignore User");
     } else {
-        ignore.text("Убрать игнор");
+        ignore.text("Unignore User");
     }
 
     /* pm button */
     if (name !== CLIENT.name) {
         var pm = $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Личное сообщение")
+            .text("Private Message")
             .appendTo(btngroup)
             .click(function () {
                 initPm(name).find(".panel-heading").click();
@@ -245,14 +245,14 @@ function addUserDropdown(entry) {
         var ldr = $("<button/>").addClass("btn btn-xs btn-default")
             .appendTo(btngroup);
         if(leader) {
-            ldr.text("Убрать лидера");
+            ldr.text("Remove Leader");
             ldr.click(function () {
                 socket.emit("assignLeader", {
                     name: ""
                 });
             });
         } else {
-            ldr.text("Дать лидера");
+            ldr.text("Give Leader");
             ldr.click(function () {
                 socket.emit("assignLeader", {
                     name: name
@@ -264,9 +264,9 @@ function addUserDropdown(entry) {
     /* kick button */
     if(hasPermission("kick")) {
         $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Выкинуть")
+            .text("Kick")
             .click(function () {
-                var reason = prompt("Введите причину (необязательно)");
+                var reason = prompt("Enter kick reason (optional)");
                 if (reason === null) {
                     return;
                 }
@@ -281,7 +281,7 @@ function addUserDropdown(entry) {
     /* mute buttons */
     if (hasPermission("mute")) {
         var mute = $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Заглушить")
+            .text("Mute")
             .click(function () {
                 socket.emit("chatMsg", {
                     msg: "/mute " + name,
@@ -299,7 +299,7 @@ function addUserDropdown(entry) {
             })
             .appendTo(btngroup);
         var unmute = $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Убрать приглушение")
+            .text("Unmute")
             .click(function () {
                 socket.emit("chatMsg", {
                     msg: "/unmute " + name,
@@ -318,9 +318,9 @@ function addUserDropdown(entry) {
     /* ban buttons */
     if(hasPermission("ban")) {
         $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Бан по имени")
+            .text("Name Ban")
             .click(function () {
-                var reason = prompt("Введите причину (необязательно)");
+                var reason = prompt("Enter ban reason (optional)");
                 if (reason === null) {
                     return;
                 }
@@ -331,9 +331,9 @@ function addUserDropdown(entry) {
             })
             .appendTo(btngroup);
         $("<button/>").addClass("btn btn-xs btn-default")
-            .text("Бан по IP")
+            .text("IP Ban")
             .click(function () {
-                var reason = prompt("Введите причину (необязательно)");
+                var reason = prompt("Enter ban reason (optional)");
                 if (reason === null) {
                     return;
                 }
@@ -371,12 +371,13 @@ function addUserDropdown(entry) {
 
 function calcUserBreakdown() {
     var breakdown = {
-        "Владельцы комнаты": 0,
-        "Модераторы": 0,
-        "Пользователи": 0,
-        "Гости": 0,
-        "Анонимы": 0,
-        "Отошли": 0
+        "Site Admins": 0,
+        "Channel Admins": 0,
+        "Moderators": 0,
+        "Regular Users": 0,
+        "Guests": 0,
+        "Anonymous": 0,
+        "AFK": 0
     };
     var total = 0;
     $("#userlist .userlist_item").each(function (index, item) {
@@ -384,22 +385,24 @@ function calcUserBreakdown() {
             rank: $(item).data("rank")
         };
 
-        if(data.rank >= 3)
-            breakdown["Владельцы комнаты"]++;
+        if(data.rank >= 255)
+            breakdown["Site Admins"]++;
+        else if(data.rank >= 3)
+            breakdown["Channel Admins"]++;
         else if(data.rank == 2)
-            breakdown["Модераторы"]++;
+            breakdown["Moderators"]++;
         else if(data.rank >= 1)
-            breakdown["Пользователи"]++;
+            breakdown["Regular Users"]++;
         else
-            breakdown["Гости"]++;
+            breakdown["Guests"]++;
 
         total++;
 
         if($(item).data().meta.afk)
-            breakdown["Отошли"]++;
+            breakdown["AFK"]++;
     });
 
-    breakdown["Анонимы"] = CHANNEL.usercount - total;
+    breakdown["Anonymous"] = CHANNEL.usercount - total;
 
     return breakdown;
 }
@@ -510,7 +513,7 @@ function addQueueButtons(li) {
     // Play
     if(hasPermission("playlistjump")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-play")
-            .html("<span class='glyphicon glyphicon-play'></span> Вне очереди")
+            .html("<span class='glyphicon glyphicon-play'></span>Play")
             .click(function() {
                 socket.emit("jumpTo", li.data("uid"));
             })
@@ -519,7 +522,7 @@ function addQueueButtons(li) {
     // Queue next
     if(hasPermission("playlistmove")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-next")
-            .html("<span class='glyphicon glyphicon-share-alt'></span> Следующее")
+            .html("<span class='glyphicon glyphicon-share-alt'></span>Queue Next")
             .click(function() {
                 socket.emit("moveMedia", {
                     from: li.data("uid"),
@@ -530,9 +533,9 @@ function addQueueButtons(li) {
     }
     // Temp/Untemp
     if(hasPermission("settemp")) {
-        var tempstr = li.data("temp")?"Закрепить":"Открепить";
+        var tempstr = li.data("temp")?"Make Permanent":"Make Temporary";
         $("<button/>").addClass("btn btn-xs btn-default qbtn-tmp")
-            .html("<span class='glyphicon glyphicon-flag'></span> " + tempstr)
+            .html("<span class='glyphicon glyphicon-flag'></span>" + tempstr)
             .click(function() {
                 socket.emit("setTemp", {
                     uid: li.data("uid"),
@@ -544,7 +547,7 @@ function addQueueButtons(li) {
     // Delete
     if(hasPermission("playlistdelete")) {
         $("<button/>").addClass("btn btn-xs btn-default qbtn-delete")
-            .html("<span class='glyphicon glyphicon-trash'></span> Удалить")
+            .html("<span class='glyphicon glyphicon-trash'></span>Delete")
             .click(function() {
                 socket.emit("delete", li.data("uid"));
             })
@@ -731,7 +734,7 @@ function applyOpts() {
     $("#chatbtn").remove();
     if(USEROPTS.chatbtn) {
         var btn = $("<button/>").addClass("btn btn-default btn-block")
-            .text("Отправить")
+            .text("Send")
             .attr("id", "chatbtn")
             .appendTo($("#chatwrap"));
         btn.click(function() {
@@ -776,13 +779,13 @@ function showPollMenu() {
         .prependTo($("#pollwrap"));
 
     $("<button/>").addClass("btn btn-sm btn-danger pull-right")
-        .text("Отмена")
+        .text("Cancel")
         .appendTo(menu)
         .click(function() {
             menu.remove();
         });
 
-    $("<strong/>").text("Название опроса").appendTo(menu);
+    $("<strong/>").text("Title").appendTo(menu);
 
     var title = $("<input/>").addClass("form-control")
         .attr("maxlength", "255")
@@ -803,15 +806,15 @@ function showPollMenu() {
     var timeoutError = null;
 
     var checkboxOuter = $("<div/>").addClass("checkbox").appendTo(menu);
-    var lbl = $("<label/>").text("Скрыть результаты до окончания голосования")
+    var lbl = $("<label/>").text("Hide poll results until it closes")
         .appendTo(checkboxOuter);
     var hidden = $("<input/>").attr("type", "checkbox")
         .prependTo(lbl);
 
-    $("<strong/>").text("Варианты ответа").appendTo(menu);
+    $("<strong/>").text("Options").appendTo(menu);
 
     var addbtn = $("<button/>").addClass("btn btn-sm btn-default")
-        .text("Добавить вариант")
+        .text("Add Option")
         .appendTo(menu);
 
     function addOption() {
@@ -827,7 +830,7 @@ function showPollMenu() {
     addOption();
 
     $("<button/>").addClass("btn btn-default btn-block")
-        .text("Начать опрос")
+        .text("Open Poll")
         .appendTo(menu)
         .click(function() {
             var t = timeout.val().trim();
@@ -980,9 +983,7 @@ function handlePermissionChange() {
     setVisible("#showcustomembed", hasPermission("playlistaddcustom"));
     $("#queue_next").attr("disabled", !hasPermission("playlistnext"));
 
-
-	// Seriously, wtf is this
-    /*if(hasPermission("playlistadd") ||
+    if(hasPermission("playlistadd") ||
         hasPermission("playlistmove") ||
         hasPermission("playlistjump") ||
         hasPermission("playlistdelete") ||
@@ -1010,7 +1011,7 @@ function handlePermissionChange() {
                     });
                 });
         }
-    } */
+    }
 
     if(hasPermission("playlistmove")) {
         $("#queue").sortable("enable");
@@ -1093,7 +1094,7 @@ function addLibraryButtons(li, item, source) {
     if(hasPermission("playlistadd")) {
         if(hasPermission("playlistnext")) {
             $("<button/>").addClass("btn btn-xs btn-default")
-                .text("След.")
+                .text("Next")
                 .click(function() {
                     socket.emit("queue", {
                         id: id,
@@ -1105,7 +1106,7 @@ function addLibraryButtons(li, item, source) {
                 .appendTo(btns);
         }
         $("<button/>").addClass("btn btn-xs btn-default")
-            .text("В конец")
+            .text("End")
             .click(function() {
                 socket.emit("queue", {
                     id: id,
@@ -1367,8 +1368,8 @@ function parseMediaLink(url) {
         };
     }
 
-    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([^\/]*)/)) ||
-        (m = url.match(/drive\.google\.com\/open\?id=([^&]*)/))) {
+    if ((m = url.match(/(?:docs|drive)\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)) ||
+        (m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/))) {
         return {
             id: m[1],
             type: "gd"
@@ -1412,6 +1413,12 @@ function parseMediaLink(url) {
             type: "fi"
         };
     }
+    if ((m = url.match(/^cm:(.*)/))) {
+        return {
+            id: m[1],
+            type: "cm"
+        };
+    }
     // Generic for the rest.
     if ((m = url.match(/^([a-z]{2}):([^\?&#]+)/))) {
         return {
@@ -1429,6 +1436,11 @@ function parseMediaLink(url) {
                 msg: "Raw files must begin with 'https'.  Plain http is not supported."
             });
             throw new Error("ERROR_QUEUE_HTTP");
+        } else if (tmp.match(/\.json$/)) {
+            return {
+                id: url,
+                type: "cm"
+            };
         } else if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov|m4a)$/)) {
             return {
                 id: url,
@@ -1437,8 +1449,8 @@ function parseMediaLink(url) {
         } else {
             Callbacks.queueFail({
                 link: url,
-                msg: "Файл, который вы пытаетесь добавить, не поддерживается. Поддерживаемые файлы: " +
-                     "mp4, flv, webm, ogg, ogv, mp3, mov, m4a."
+                msg: "The file you are attempting to queue does not match the supported " +
+                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a."
             });
             // Lol I forgot about this hack
             throw new Error("ERROR_QUEUE_UNSUPPORTED_EXTENSION");
@@ -1568,7 +1580,7 @@ function addChatMessage(data) {
     var div = formatChatMessage(data, LASTCHAT);
     // Incoming: a bunch of crap for the feature where if you hover over
     // a message, it highlights messages from that user
-    var safeUsername = data.username.replace(/[^\wа-яА-Я-]/g, '\\$');
+    var safeUsername = data.username.replace(/[^\w-]/g, '\\$');
     div.addClass("chat-msg-" + safeUsername);
     div.appendTo(msgBuf);
     div.mouseover(function() {
@@ -1591,7 +1603,7 @@ function addChatMessage(data) {
 
             $("<span/>").addClass("glyphicon glyphicon-chevron-down")
                     .appendTo(bgHack);
-            $("<span/>").text("Новые сообщения").appendTo(bgHack);
+            $("<span/>").text("New Messages Below").appendTo(bgHack);
             $("<span/>").addClass("glyphicon glyphicon-chevron-down")
                     .appendTo(bgHack);
             newMessageDiv.click(function () {
@@ -1646,10 +1658,10 @@ function pingMessage(isHighlight) {
         if (!TITLE_BLINK && (USEROPTS.blink_title === "always" ||
             USEROPTS.blink_title === "onlyping" && isHighlight)) {
             TITLE_BLINK = setInterval(function() {
-                if(document.title == "* Сообщение *")
+                if(document.title == "*Chat*")
                     document.title = PAGETITLE;
                 else
-                    document.title = "* Сообщение *";
+                    document.title = "*Chat*";
             }, 1000);
         }
 
@@ -1821,12 +1833,12 @@ function chatOnly() {
         padding: "0"
     });
     $("<span/>").addClass("label label-default pull-right pointer")
-        .text("Настройки")
+        .text("User Options")
         .appendTo($("#chatheader"))
         .click(showUserOptions);
     $("<span/>").addClass("label label-default pull-right pointer")
         .attr("id", "showchansettings")
-        .text("Канал")
+        .text("Channel Settings")
         .appendTo($("#chatheader"))
         .click(function () {
             $("#channeloptions").modal();
@@ -1884,9 +1896,6 @@ handleWindowResize();
 function removeVideo(event) {
     try {
         PLAYER.setVolume(0);
-        if (PLAYER.type === "rv") {
-            killVideoUntilItIsDead($(PLAYER.player));
-        }
     } catch (e) {
     }
 
@@ -1962,62 +1971,62 @@ function genPermissionsEditor() {
         ["Nobody"       , "1000000"]
     ];
 
-    $("<h3/>").text("Настройки открытого плейлиста").appendTo(form);
-    makeOption("Добавить видео в очередь", "oplaylistadd", standard, CHANNEL.perms.oplaylistadd+"");
-    makeOption("Добавить/переместить в очередь следующим", "oplaylistnext", standard, CHANNEL.perms.oplaylistnext+"");
-    makeOption("Перемещать видео в очереди", "oplaylistmove", standard, CHANNEL.perms.oplaylistmove+"");
-    makeOption("Удалять видео из очереди", "oplaylistdelete", standard, CHANNEL.perms.oplaylistdelete+"");
-    makeOption("Переключиться на видео", "oplaylistjump", standard, CHANNEL.perms.oplaylistjump+"");
-    makeOption("Добавить плейлист в очередь", "oplaylistaddlist", standard, CHANNEL.perms.oplaylistaddlist+"");
+    $("<h3/>").text("Open playlist permissions").appendTo(form);
+    makeOption("Add to playlist", "oplaylistadd", standard, CHANNEL.perms.oplaylistadd+"");
+    makeOption("Add/move to next", "oplaylistnext", standard, CHANNEL.perms.oplaylistnext+"");
+    makeOption("Move playlist items", "oplaylistmove", standard, CHANNEL.perms.oplaylistmove+"");
+    makeOption("Delete playlist items", "oplaylistdelete", standard, CHANNEL.perms.oplaylistdelete+"");
+    makeOption("Jump to video", "oplaylistjump", standard, CHANNEL.perms.oplaylistjump+"");
+    makeOption("Queue playlist", "oplaylistaddlist", standard, CHANNEL.perms.oplaylistaddlist+"");
 
-    addDivider("Общие настройки плейлиста");
-    makeOption("Видеть плейлист", "seeplaylist", standard, CHANNEL.perms.seeplaylist+"");
-    makeOption("Добавить видео в очередь", "playlistadd", standard, CHANNEL.perms.playlistadd+"");
-    makeOption("Добавить/переместить в очередь следующим", "playlistnext", standard, CHANNEL.perms.playlistnext+"");
-    makeOption("Перемещать видео в очереди", "playlistmove", standard, CHANNEL.perms.playlistmove+"");
-    makeOption("Удалять видео из очереди", "playlistdelete", standard, CHANNEL.perms.playlistdelete+"");
-    makeOption("Переключиться на видео", "playlistjump", standard, CHANNEL.perms.playlistjump+"");
-    makeOption("Добавить плейлист в очередь", "playlistaddlist", standard, CHANNEL.perms.playlistaddlist+"");
-    makeOption("Добавить трансляцию в очередь", "playlistaddlive", standard, CHANNEL.perms.playlistaddlive+"");
-    makeOption("Добавить iframe в очередь", "playlistaddcustom", standard, CHANNEL.perms.playlistaddcustom + "");
-    makeOption("Добавить файл по прямой ссылке", "playlistaddrawfile", standard, CHANNEL.perms.playlistaddrawfile + "");
-    makeOption("Обходить максимальную продолжительность видео", "exceedmaxlength", standard, CHANNEL.perms.exceedmaxlength+"");
+    addDivider("General playlist permissions");
+    makeOption("View the playlist", "seeplaylist", standard, CHANNEL.perms.seeplaylist+"");
+    makeOption("Add to playlist", "playlistadd", standard, CHANNEL.perms.playlistadd+"");
+    makeOption("Add/move to next", "playlistnext", standard, CHANNEL.perms.playlistnext+"");
+    makeOption("Move playlist items", "playlistmove", standard, CHANNEL.perms.playlistmove+"");
+    makeOption("Delete playlist items", "playlistdelete", standard, CHANNEL.perms.playlistdelete+"");
+    makeOption("Jump to video", "playlistjump", standard, CHANNEL.perms.playlistjump+"");
+    makeOption("Queue playlist", "playlistaddlist", standard, CHANNEL.perms.playlistaddlist+"");
+    makeOption("Queue livestream", "playlistaddlive", standard, CHANNEL.perms.playlistaddlive+"");
+    makeOption("Embed custom media", "playlistaddcustom", standard, CHANNEL.perms.playlistaddcustom + "");
+    makeOption("Add raw video file", "playlistaddrawfile", standard, CHANNEL.perms.playlistaddrawfile + "");
+    makeOption("Exceed maximum media length", "exceedmaxlength", standard, CHANNEL.perms.exceedmaxlength+"");
     makeOption("Exceed maximum total media length", "exceedmaxdurationperuser", standard, CHANNEL.perms.exceedmaxdurationperuser+"");
-    makeOption("Обходить максимальное количество добавляемых видео", "exceedmaxitems", standard, CHANNEL.perms.exceedmaxitems+"");
-    makeOption("Добавить постоянное видео", "addnontemp", standard, CHANNEL.perms.addnontemp+"");
-    makeOption("Сделать видео постоянным или временым", "settemp", standard, CHANNEL.perms.settemp+"");
-    makeOption("Открыть или закрыть плейлист", "playlistlock", modleader, CHANNEL.perms.playlistlock+"");
-    makeOption("Перемешать плейлист", "playlistshuffle", standard, CHANNEL.perms.playlistshuffle+"");
-    makeOption("Очистить плейлист", "playlistclear", standard, CHANNEL.perms.playlistclear+"");
+    makeOption("Exceed maximum number of videos per user", "exceedmaxitems", standard, CHANNEL.perms.exceedmaxitems+"");
+    makeOption("Add nontemporary media", "addnontemp", standard, CHANNEL.perms.addnontemp+"");
+    makeOption("Temp/untemp playlist item", "settemp", standard, CHANNEL.perms.settemp+"");
+    makeOption("Lock/unlock playlist", "playlistlock", modleader, CHANNEL.perms.playlistlock+"");
+    makeOption("Shuffle playlist", "playlistshuffle", standard, CHANNEL.perms.playlistshuffle+"");
+    makeOption("Clear playlist", "playlistclear", standard, CHANNEL.perms.playlistclear+"");
     makeOption("Delete from channel library", "deletefromchannellib", standard, CHANNEL.perms.deletefromchannellib+"");
 
-    addDivider("Опросы");
-    makeOption("Начать или закончить опрос", "pollctl", modleader, CHANNEL.perms.pollctl+"");
-    makeOption("Голосовать", "pollvote", standard, CHANNEL.perms.pollvote+"");
-    makeOption("Видеть результаты скрытого голосования", "viewhiddenpoll", standard, CHANNEL.perms.viewhiddenpoll+"");
-    makeOption("Голосовать за пропуск", "voteskip", standard, CHANNEL.perms.voteskip+"");
-    makeOption("Видеть результаты голосования за пропуск", "viewvoteskip", standard, CHANNEL.perms.viewvoteskip+"");
+    addDivider("Polls");
+    makeOption("Open/Close poll", "pollctl", modleader, CHANNEL.perms.pollctl+"");
+    makeOption("Vote", "pollvote", standard, CHANNEL.perms.pollvote+"");
+    makeOption("View hidden poll results", "viewhiddenpoll", standard, CHANNEL.perms.viewhiddenpoll+"");
+    makeOption("Voteskip", "voteskip", standard, CHANNEL.perms.voteskip+"");
+    makeOption("View voteskip results", "viewvoteskip", standard, CHANNEL.perms.viewvoteskip+"");
 
-    addDivider("Модерация");
-    makeOption("Добавить или убрать лидера", "leaderctl", modplus, CHANNEL.perms.leaderctl+"");
-    makeOption("Приглушить пользователя", "mute", modleader, CHANNEL.perms.mute+"");
-    makeOption("Выбросить пользователя", "kick", modleader, CHANNEL.perms.kick+"");
-    makeOption("Забанить пользователя", "ban", modplus, CHANNEL.perms.ban+"");
-    makeOption("Редактировать MOTD", "motdedit", modplus, CHANNEL.perms.motdedit+"");
-    makeOption("Редактировать чат-фильтры", "filteredit", modplus, CHANNEL.perms.filteredit+"");
-    makeOption("Импортировать чат-фильтры", "filterimport", modplus, CHANNEL.perms.filterimport+"");
-    makeOption("Редактировать смайлики", "emoteedit", modplus, CHANNEL.perms.emoteedit+"");
-    makeOption("Импортировать смайлики", "emoteimport", modplus, CHANNEL.perms.emoteimport+"");
+    addDivider("Moderation");
+    makeOption("Assign/Remove leader", "leaderctl", modplus, CHANNEL.perms.leaderctl+"");
+    makeOption("Mute users", "mute", modleader, CHANNEL.perms.mute+"");
+    makeOption("Kick users", "kick", modleader, CHANNEL.perms.kick+"");
+    makeOption("Ban users", "ban", modplus, CHANNEL.perms.ban+"");
+    makeOption("Edit MOTD", "motdedit", modplus, CHANNEL.perms.motdedit+"");
+    makeOption("Edit chat filters", "filteredit", modplus, CHANNEL.perms.filteredit+"");
+    makeOption("Import chat filters", "filterimport", modplus, CHANNEL.perms.filterimport+"");
+    makeOption("Edit chat emotes", "emoteedit", modplus, CHANNEL.perms.emoteedit+"");
+    makeOption("Import chat emotes", "emoteimport", modplus, CHANNEL.perms.emoteimport+"");
 
-    addDivider("Разное");
+    addDivider("Misc");
     makeOption("Drink calls", "drink", modleader, CHANNEL.perms.drink+"");
-    makeOption("Чат", "chat", noanon, CHANNEL.perms.chat+"");
-    makeOption("Очистить чат", "chatclear", modleader, CHANNEL.perms.chatclear+"");
+    makeOption("Chat", "chat", noanon, CHANNEL.perms.chat+"");
+    makeOption("Clear Chat", "chatclear", modleader, CHANNEL.perms.chatclear+"");
 
     var sgroup = $("<div/>").addClass("form-group").appendTo(form);
     var sgroupinner = $("<div/>").addClass("col-sm-8 col-sm-offset-4").appendTo(sgroup);
     var submit = $("<button/>").addClass("btn btn-primary").appendTo(sgroupinner);
-    submit.text("Сохранить");
+    submit.text("Save");
     submit.click(function() {
         var perms = {};
         form.find("select").each(function() {
@@ -2028,7 +2037,7 @@ function genPermissionsEditor() {
 
     var msggroup = $("<div/>").addClass("form-group").insertAfter(sgroup);
     var msginner = $("<div/>").addClass("col-sm-8 col-sm-offset-4").appendTo(msggroup);
-    var text = $("<span/>").addClass("text-info").text("Разрешения обновлены.")
+    var text = $("<span/>").addClass("text-info").text("Permissions updated")
         .appendTo(msginner);
 
     setTimeout(function () {
@@ -2137,13 +2146,13 @@ function queueMessage(data, type) {
     if (!data)
         data = { link: null };
     if (!data.msg || data.msg === true) {
-        data.msg = "Не получилось добавить видео в очередь. Проверьте правильность написания ссылки.";
+        data.msg = "Queue failed.  Check your link to make sure it is valid.";
     }
     var ltype = "label-danger";
-    var title = "Ошибка";
+    var title = "Error";
     if (type === "alert-warning") {
         ltype = "label-warning";
-        title = "Внимание";
+        title = "Warning";
     }
 
     var alerts = $(".qfalert.qf-" + type + " .alert");
@@ -2163,7 +2172,7 @@ function queueMessage(data, type) {
             } else {
                 var tag = $("<span/>")
                     .addClass("label pull-right pointer " + ltype)
-                    .text("+ еще 1")
+                    .text("+ 1 more")
                     .appendTo(al);
                 var morelinks = $("<div/>")
                     .addClass("qflinks")
@@ -2389,7 +2398,7 @@ function formatCSBanlist() {
         $("<td/>").text(entry.ip).appendTo(tr);
         $("<td/>").text(entry.name).appendTo(tr);
         $("<td/>").text(entry.bannedby).appendTo(tr);
-        tr.attr("title", "Причина бана: " + entry.reason);
+        tr.attr("title", "Ban Reason: " + entry.reason);
         return tr;
     };
 
@@ -2450,7 +2459,7 @@ function formatCSChatFilterList() {
         var controlgroup = $("<div/>").addClass("btn-group")
             .appendTo($("<td/>").appendTo(tr));
         var control = $("<button/>").addClass("btn btn-xs btn-default")
-            .attr("title", "Редактировать фильтр")
+            .attr("title", "Edit this filter")
             .appendTo(controlgroup);
         $("<span/>").addClass("glyphicon glyphicon-list").appendTo(control);
         var del = $("<button/>").addClass("btn btn-xs btn-danger")
@@ -2500,28 +2509,28 @@ function formatCSChatFilterList() {
                 return input;
             };
 
-            var regex = addTextbox("Регулярное выражение").val(f.source);
-            var flags = addTextbox("Флаги").val(f.flags);
-            var replace = addTextbox("Текст замены").val(f.replace);
+            var regex = addTextbox("Filter regex").val(f.source);
+            var flags = addTextbox("Regex flags").val(f.flags);
+            var replace = addTextbox("Replacement text").val(f.replace);
 
             var checkwrap = $("<div/>").addClass("checkbox").appendTo(form);
-            var checklbl = $("<label/>").text("Фильтровать ссылки").appendTo(checkwrap);
+            var checklbl = $("<label/>").text("Filter Links").appendTo(checkwrap);
             var filterlinks = $("<input/>").attr("type", "checkbox")
                 .prependTo(checklbl)
                 .prop("checked", f.filterlinks);
 
             var save = $("<button/>").addClass("btn btn-xs btn-success")
-                .attr("title", "Сохранить")
+                .attr("title", "Save changes")
                 .insertAfter(control);
             $("<span/>").addClass("glyphicon glyphicon-floppy-save").appendTo(save);
             save.click(function () {
                 f.source = regex.val();
                 var entcheck = checkEntitiesInStr(f.source);
                 if (entcheck) {
-                    alert("Внимание: " + entcheck.src + " будет заменен на " +
-                          entcheck.replace + " препроцессором сообщений.  Возможно, " +
-                          "это регулярное выражение может не совпадать с тем, что вы " +
-                          "вводили.");
+                    alert("Warning: " + entcheck.src + " will be replaced by " +
+                          entcheck.replace + " in the message preprocessor.  This " +
+                          "regular expression may not match what you intended it to " +
+                          "match.");
                 }
                 f.flags = flags.val();
                 f.replace = replace.val();
@@ -2622,7 +2631,7 @@ function formatUserPlaylistList() {
 
         $("<button/>").addClass("btn btn-xs btn-danger")
             .html("<span class='glyphicon glyphicon-trash'></span>")
-            .attr("title", "Удалить плейлист")
+            .attr("title", "Delete playlist")
             .appendTo(btns)
             .click(function () {
                 var really = confirm("Are you sure you want to delete" +
@@ -2638,6 +2647,14 @@ function formatUserPlaylistList() {
 }
 
 function loadEmotes(data) {
+    function sanitizeText(str) {
+        str = str.replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;");
+        return str;
+    }
+
     CHANNEL.emotes = [];
     CHANNEL.emoteMap = {};
     CHANNEL.badEmotes = [];
@@ -2649,7 +2666,7 @@ function loadEmotes(data) {
                 // Emotes with spaces can't be hashmapped
                 CHANNEL.badEmotes.push(e);
             } else {
-                CHANNEL.emoteMap[e.name] = e;
+                CHANNEL.emoteMap[sanitizeText(e.name)] = e;
             }
         } else {
             console.error("Rejecting invalid emote: " + JSON.stringify(e));
@@ -2763,32 +2780,6 @@ function initPm(user) {
     return pm;
 }
 
-function killVideoUntilItIsDead(video) {
-    try {
-        video[0].volume = 0;
-        video[0].muted = true;
-        video.attr("src", "");
-        video.remove();
-    } catch (e) {
-    }
-}
-
-function fallbackRaw(data) {
-    $("<div/>").insertBefore($("#ytapiplayer")).attr("id", "ytapiplayer");
-    $("video").each(function () {
-        killVideoUntilItIsDead($(this));
-    });
-    $("audio").each(function () {
-        killVideoUntilItIsDead($(this));
-    });
-    data.type = "fl";
-    data.url = data.direct.sd.url;
-    PLAYER.player = undefined;
-    PLAYER = new FlashPlayer(data);
-
-    handleMediaUpdate(data);
-}
-
 function checkScriptAccess(source, type, cb) {
     var pref = JSPREF[CHANNEL.name.toLowerCase() + "_" + type];
     if (pref === "ALLOW") {
@@ -2811,17 +2802,17 @@ function checkScriptAccess(source, type, cb) {
             .attr("id", "chanjs-allow-prompt")
             .attr("style", "text-align: center")
             .appendTo(div);
-        form.append("<span>Для того, чтобы запустить специальные возможности канала, требуется ваше разрешение</span><br>");
+        form.append("<span>This channel has special features that require your permission to run.</span><br>");
         $("<a/>").attr("href", source)
             .attr("target", "_blank")
-            .text(type === "embedded" ? "посмотреть содержимое скрипта" : source)
+            .text(type === "embedded" ? "view embedded script" : source)
             .appendTo(form);
         form.append("<div id='chanjs-allow-prompt-buttons'>" +
-                        "<button id='chanjs-allow' class='btn btn-xs btn-danger'>Разрешить</button>" +
-                        "<button id='chanjs-deny' class='btn btn-xs btn-danger'>Запретить</button>" +
+                        "<button id='chanjs-allow' class='btn btn-xs btn-danger'>Allow</button>" +
+                        "<button id='chanjs-deny' class='btn btn-xs btn-danger'>Deny</button>" +
                     "</div>");
         form.append("<div class='checkbox'><label><input type='checkbox' " +
-                    "id='chanjs-save-pref'/>Запомнить выбор для этого канала" +
+                    "id='chanjs-save-pref'/>Remember my choice for this channel" +
                     "</label></div>");
         var dialog = chatDialog(div);
 
@@ -2886,7 +2877,7 @@ function formatScriptAccessPrefs() {
 
         var pref_td = $("<td/>").appendTo(tr);
         var allow_label = $("<label/>").addClass("radio-inline")
-            .text("Разрешить").appendTo(pref_td);
+            .text("Allow").appendTo(pref_td);
         var allow = $("<input/>").attr("type", "radio")
             .prop("checked", pref === "ALLOW").
             prependTo(allow_label);
@@ -2899,7 +2890,7 @@ function formatScriptAccessPrefs() {
         });
 
         var deny_label = $("<label/>").addClass("radio-inline")
-            .text("Запретить").appendTo(pref_td);
+            .text("Deny").appendTo(pref_td);
         var deny = $("<input/>").attr("type", "radio")
             .prop("checked", pref === "DENY").
             prependTo(deny_label);
@@ -2912,7 +2903,7 @@ function formatScriptAccessPrefs() {
         });
 
         var clearpref = $("<button/>").addClass("btn btn-sm btn-danger")
-            .text("Забыть выбор")
+            .text("Clear Preference")
             .appendTo($("<td/>").appendTo(tr))
             .click(function () {
                 delete JSPREF[channel];
@@ -2920,51 +2911,6 @@ function formatScriptAccessPrefs() {
                 tr.remove();
             });
     });
-}
-
-/*
-    VIMEO SIMULATOR 2014
-
-    Vimeo decided to block my domain.  After repeated emails, they refused to
-    unblock it.  Rather than give in to their demands, there is a serverside
-    option which extracts direct links to the h264 encoded MP4 video files.
-    These files can be loaded in a custom player to allow Vimeo playback without
-    triggering their dumb API domain block.
-
-    It's a little bit hacky, but my only other option is to keep buying new
-    domains every time one gets blocked.  No thanks to Vimeo, who were of no help
-    and unwilling to compromise on the issue.
-*/
-function vimeoSimulator2014(data) {
-    /* Vimeo Simulator uses the raw file player */
-    data.type = "fi";
-
-    /* Convert youtube-style quality key to vimeo workaround quality */
-    var q = {
-        small: "mobile",
-        medium: "sd",
-        large: "sd",
-        hd720: "hd",
-        hd1080:"hd",
-        highres: "hd"
-    }[USEROPTS.default_quality] || "sd";
-
-    var fallback = {
-        hd: "sd",
-        sd: "mobile",
-        mobile: false
-    };
-
-    /* Pick highest quality less than or equal to user's preference from the options */
-    while (!(q in data.meta.direct) && q != false) {
-        q = fallback[q];
-    }
-    if (!q) {
-        q = "sd";
-    }
-
-    data.url = data.meta.direct[q].url;
-    return data;
 }
 
 function EmoteList(selector, emoteClickCallback) {
@@ -3280,6 +3226,13 @@ function startQueueSpinner(data) {
 }
 
 function stopQueueSpinner(data) {
+    // TODO: this is a temp hack, need to replace media ID check with
+    // a passthrough request ID (since media ID from API is not necessarily
+    // the same as the URL "ID" from the user)
+    if (data && data.type === "us") {
+        data = { id: data.title.match(/Ustream.tv - (.*)/)[1] };
+    }
+
     var shouldRemove = (data !== null &&
                         typeof data === 'object' &&
                         $("#queueprogress").data("queue-id") === data.id);
@@ -3299,11 +3252,15 @@ function maybePromptToUpgradeUserscript() {
         return;
     }
 
-    var currentVersion = [1, 3];
+    var currentVersion = GS_VERSION.toString(); // data.js
     var userscriptVersion = window.driveUserscriptVersion;
     if (!userscriptVersion) {
         userscriptVersion = '1.0';
     }
+
+    currentVersion = currentVersion.split('.').map(function (part) {
+        return parseInt(part, 10);
+    });
     userscriptVersion = userscriptVersion.split('.').map(function (part) {
         return parseInt(part, 10);
     });

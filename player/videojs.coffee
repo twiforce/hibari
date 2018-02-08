@@ -9,9 +9,10 @@ sortSources = (sources) ->
         pref = '2160'
     idx = qualities.indexOf(pref)
     if idx < 0
-        idx = 2
+        idx = 5 # 480p
 
     qualityOrder = qualities.slice(idx).concat(qualities.slice(0, idx).reverse())
+    qualityOrder.unshift('auto')
     sourceOrder = []
     flvOrder = []
     for quality in qualityOrder
@@ -31,8 +32,15 @@ sortSources = (sources) ->
     return sourceOrder.concat(flvOrder).map((source) ->
         type: source.contentType
         src: source.link
-        quality: source.quality
+        res: source.quality
+        label: getSourceLabel(source)
     )
+
+getSourceLabel = (source) ->
+    if source.res is 'auto'
+        return 'auto'
+    else
+        return "#{source.quality}p #{source.contentType.split('/')[1]}"
 
 waitUntilDefined(window, 'videojs', =>
     videojs.options.flash.swf = '/video-js.swf'
@@ -47,9 +55,16 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
 
     loadPlayer: (data) ->
         waitUntilDefined(window, 'videojs', =>
+            attrs =
+                width: '100%'
+                height: '100%'
+
+            if @mediaType == 'cm' and data.meta.textTracks
+                attrs.crossorigin = 'anonymous'
+
             video = $('<video/>')
                 .addClass('video-js vjs-default-skin embed-responsive-item')
-                .attr(width: '100%', height: '100%')
+                .attr(attrs)
             removeOld(video)
 
             @sources = sortSources(data.meta.direct)
@@ -60,15 +75,10 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                 return
 
             @sourceIdx = 0
-            @sources.forEach((source) ->
-                $('<source/>').attr(
-                    src: source.src
-                    type: source.type
-                    res: source.quality
-                    label: "#{source.quality}p #{source.type.split('/')[1]}"
-                ).appendTo(video)
-            )
 
+            # TODO: Refactor VideoJSPlayer to use a preLoad()/load()/postLoad() pattern
+            # VideoJSPlayer should provide the core functionality and logic for specific
+            # dependent player types (gdrive) should be an extension
             if data.meta.gdrive_subtitles
                 data.meta.gdrive_subtitles.available.forEach((subt) ->
                     label = subt.lang_original
@@ -83,18 +93,34 @@ window.VideoJSPlayer = class VideoJSPlayer extends Player
                     ).appendTo(video)
                 )
 
+            if data.meta.textTracks
+                data.meta.textTracks.forEach((track) ->
+                    label = track.name
+                    $('<track/>').attr(
+                        src: track.url
+                        kind: 'subtitles'
+                        type: track.type
+                        label: label
+                    ).appendTo(video)
+                )
+
             @player = videojs(video[0],
-                    autoplay: true,
+                    # https://github.com/Dash-Industry-Forum/dash.js/issues/2184
+                    autoplay: @sources[0].type != 'application/dash+xml',
                     controls: true,
                     plugins:
                         videoJsResolutionSwitcher:
-                            default: @sources[0].quality
+                            default: @sources[0].res
             )
             @player.ready(=>
+                # Have to use updateSrc instead of <source> tags
+                # see: https://github.com/videojs/video.js/issues/3428
+                @player.updateSrc(@sources)
                 @player.on('error', =>
                     err = @player.error()
                     if err and err.code == 4
                         console.error('Caught error, trying next source')
+                        # Does this really need to be done manually?
                         @sourceIdx++
                         if @sourceIdx < @sources.length
                             @player.src(@sources[@sourceIdx])

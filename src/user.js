@@ -34,21 +34,25 @@ function User(socket, ip, loginInfo) {
             guest: false
         });
         socket.emit("rank", this.account.effectiveRank);
+        if (this.account.globalRank >= 255) {
+            this.initAdminCallbacks();
+        }
+        this.emit("login", this.account);
         LOGGER.info(ip + " logged in as " + this.getName());
     } else {
         this.account = new Account.Account(this.realip, null, socket.context.aliases);
         socket.emit("rank", -1);
         this.setFlag(Flags.U_READY);
+        this.once("login", account => {
+            if (account.globalRank >= 255) {
+                this.initAdminCallbacks();
+            }
+        });
     }
 
     socket.once("joinChannel", data => this.handleJoinChannel(data));
     socket.once("initACP", () => this.handleInitACP());
     socket.on("login", data => this.handleLogin(data));
-    this.once("login", account => {
-        if (account.globalRank >= 255) {
-            this.initAdminCallbacks();
-        }
-    });
 }
 
 User.prototype = Object.create(EventEmitter.prototype);
@@ -236,6 +240,21 @@ User.prototype.setAFK = function (afk) {
     } else {
         this.clearFlag(Flags.U_AFK);
         this.autoAFK();
+    }
+
+    if (!this.inChannel()) {
+        // I haven't exactly nailed down why this.channel can
+        // become null halfway through the function, but based
+        // on log analysis I suspect it's because this.socket.emit()
+        // can fire the "disconnect" event which then tears down
+        // the User object.
+        LOGGER.warn(
+            "Encountered this.channel == null from setAFK.  " +
+            "this.dead=%t this.flags=%b",
+            this.dead,
+            this.flags
+        );
+        return;
     }
 
     /* Number of AFK users changed, voteskip state changes */

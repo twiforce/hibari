@@ -62,8 +62,8 @@ const TBL_ALIASES = "" +
         "`ip` VARCHAR(39) NOT NULL," +
         "`name` VARCHAR(20) NOT NULL," +
         "`time` BIGINT NOT NULL," +
-        "PRIMARY KEY (`visit_id`), INDEX (`ip`))" +
-    "CHARACTER SET utf8";
+        "PRIMARY KEY (`visit_id`), INDEX (`ip`)" +
+    ")";
 
 const TBL_META = "" +
     "CREATE TABLE IF NOT EXISTS `meta` (" +

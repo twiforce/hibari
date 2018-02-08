@@ -46,6 +46,7 @@ class ReferenceCounter {
                 LOGGER.error("ReferenceCounter::unref() called by caller [" +
                         caller + "] but this caller had no active references! " +
                         `(channel: ${this.channelName})`);
+                return;
             }
         }
 
@@ -63,7 +64,7 @@ class ReferenceCounter {
                 for (var caller in this.references) {
                     this.refCount += this.references[caller];
                 }
-            } else if (this.channel.users.length > 0) {
+            } else if (this.channel.users && this.channel.users.length > 0) {
                 LOGGER.error("ReferenceCounter::refCount reached 0 but still had " +
                         this.channel.users.length + " active users" +
                         ` (channel: ${this.channelName})`);
@@ -239,43 +240,66 @@ Channel.prototype.loadState = function () {
     });
 };
 
-Channel.prototype.saveState = function () {
+Channel.prototype.saveState = async function () {
     if (!this.is(Flags.C_REGISTERED)) {
-        return Promise.resolve();
+        return;
     } else if (!this.is(Flags.C_READY)) {
-        return Promise.reject(new Error(`Attempted to save channel ${this.name} ` +
-                `but it wasn't finished loading yet!`));
+        throw new Error(
+            `Attempted to save channel ${this.name} ` +
+            `but it wasn't finished loading yet!`
+        );
     }
 
     if (this.is(Flags.C_ERROR)) {
-        return Promise.reject(new Error(`Channel is in error state`));
+        throw new Error(`Channel is in error state`);
     }
 
     this.logger.log("[init] Saving channel state to disk");
+
     const data = {};
     Object.keys(this.modules).forEach(m => {
-        this.modules[m].save(data);
+        if (
+            this.modules[m].dirty ||
+            !this.modules[m].supportsDirtyCheck
+        ) {
+            this.modules[m].save(data);
+        } else {
+            LOGGER.debug(
+                "Skipping save for %s[%s]: not dirty",
+                this.uniqueName,
+                m
+            );
+        }
     });
 
-    return ChannelStore.save(this.id, this.uniqueName, data)
-            .catch(ChannelStateSizeError, err => {
-        this.users.forEach(u => {
-            if (u.account.effectiveRank >= 2) {
-                u.socket.emit("warnLargeChandump", {
-                    limit: err.limit,
-                    actual: err.actual
-                });
-            }
+    try {
+        await ChannelStore.save(this.id, this.uniqueName, data);
+
+        Object.keys(this.modules).forEach(m => {
+            this.modules[m].dirty = false;
         });
+    } catch (error) {
+        if (error instanceof ChannelStateSizeError) {
+            this.users.forEach(u => {
+                if (u.account.effectiveRank >= 2) {
+                    u.socket.emit("warnLargeChandump", {
+                        limit: error.limit,
+                        actual: error.actual
+                    });
+                }
+            });
+        }
 
-        throw err;
-    });
+        throw error;
+    }
 };
 
 Channel.prototype.checkModules = function (fn, args, cb) {
     const self = this;
     const refCaller = `Channel::checkModules/${fn}`;
     this.waitFlag(Flags.C_READY, function () {
+        if (self.dead) return;
+
         self.refCounter.ref(refCaller);
         var keys = Object.keys(self.modules);
         var next = function (err, result) {
@@ -294,6 +318,15 @@ Channel.prototype.checkModules = function (fn, args, cb) {
                 return;
             }
 
+            if (!self.modules) {
+                LOGGER.warn(
+                    'checkModules(%s): self.modules is undefined; dead=%s',
+                    fn,
+                    self.dead
+                );
+                return;
+            }
+
             var module = self.modules[m];
             module[fn].apply(module, args);
         };
@@ -306,6 +339,7 @@ Channel.prototype.checkModules = function (fn, args, cb) {
 Channel.prototype.notifyModules = function (fn, args) {
     var self = this;
     this.waitFlag(Flags.C_READY, function () {
+        if (self.dead) return;
         var keys = Object.keys(self.modules);
         keys.forEach(function (k) {
             self.modules[k][fn].apply(self.modules[k], args);
@@ -318,6 +352,7 @@ Channel.prototype.joinUser = function (user, data) {
 
     self.refCounter.ref("Channel::user");
     self.waitFlag(Flags.C_READY, function () {
+
         /* User closed the connection before the channel finished loading */
         if (user.socket.disconnected) {
             self.refCounter.unref("Channel::user");
@@ -369,10 +404,10 @@ Channel.prototype.acceptUser = function (user) {
     user.autoAFK();
     user.socket.on("readChanLog", this.handleReadLog.bind(this, user));
 
-    LOGGER.info(user.realip + " зашел в комнату " + this.name);
+    LOGGER.info(user.realip + " joined " + this.name);
     if (user.socket.context.torConnection) {
         if (this.modules.options && this.modules.options.get("torbanned")) {
-            user.kick("Этот канал запретил подключения из сети Tor.");
+            user.kick("This channel has banned connections from Tor.");
             this.logger.log("[login] Blocked connection from Tor exit at " +
                             user.displayip);
             return;
@@ -389,7 +424,7 @@ Channel.prototype.acceptUser = function (user) {
         for (var i = 0; i < self.users.length; i++) {
             if (self.users[i] !== user &&
                 self.users[i].getLowerName() === user.getLowerName()) {
-                self.users[i].kick("Множественный логин.");
+                self.users[i].kick("Duplicate login");
             }
         }
 
@@ -609,7 +644,7 @@ Channel.prototype.sendUserJoin = function (users, user) {
         }
     });
 
-    self.modules.chat.sendModMessage(user.getName() + " зашел в комнату (алиасы: " +
+    self.modules.chat.sendModMessage(user.getName() + " joined (aliases: " +
                                      user.account.aliases.join(",") + ")", 2);
 };
 

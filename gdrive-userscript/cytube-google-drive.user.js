@@ -5,21 +5,29 @@
 // {INCLUDE_BLOCK}
 // @grant unsafeWindow
 // @grant GM_xmlhttpRequest
+// @grant GM.xmlHttpRequest
 // @connect docs.google.com
 // @run-at document-end
-// @version 1.3.0
+// @version 1.7.0
 // ==/UserScript==
 
 try {
     function debug(message) {
-        if (!unsafeWindow.enableCyTubeGoogleDriveUserscriptDebug) {
-            return;
-        }
-
         try {
-            unsafeWindow.console.log(message);
+            unsafeWindow.console.log('[Drive]', message);
         } catch (error) {
             unsafeWindow.console.error(error);
+        }
+    }
+
+    function httpRequest(opts) {
+        if (typeof GM_xmlhttpRequest === 'undefined') {
+            // Assume GM4.0
+            debug('Using GM4.0 GM.xmlHttpRequest');
+            GM.xmlHttpRequest(opts);
+        } else {
+            debug('Using old-style GM_xmlhttpRequest');
+            GM_xmlhttpRequest(opts);
         }
     }
 
@@ -56,28 +64,47 @@ try {
                 + '&hl=en';
         debug('Fetching ' + url);
 
-        GM_xmlhttpRequest({
+        httpRequest({
             method: 'GET',
             url: url,
             onload: function (res) {
                 try {
                     debug('Got response ' + res.responseText);
+
+                    if (res.status !== 200) {
+                        debug('Response status not 200: ' + res.status);
+                        return cb(
+                            'Google Drive request failed: HTTP ' + res.status
+                        );
+                    }
+
                     var data = {};
                     var error;
+                    // Google Santa sometimes eats login cookies and gets mad if there aren't any.
+                    if(/accounts\.google\.com\/ServiceLogin/.test(res.responseText)){
+                        error = 'Google Docs request failed: ' +
+                                'This video requires you be logged into a Google account. ' +
+                                'Open your Gmail in another tab and then refresh video.';
+                        return cb(error);
+                    }
+
                     res.responseText.split('&').forEach(function (kv) {
                         var pair = kv.split('=');
                         data[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
                     });
 
                     if (data.status === 'fail') {
-                        var error = 'Google Docs request failed: ' +
+                        error = 'Google Drive request failed: ' +
                                 unescape(data.reason).replace(/\+/g, ' ');
                         return cb(error);
                     }
 
                     if (!data.fmt_stream_map) {
-                        var error = 'Google Docs request failed: ' +
-                                'metadata lookup returned no valid links';
+                        error = (
+                            'Google has removed the video streams associated' +
+                            ' with this item.  It can no longer be played.'
+                        );
+
                         return cb(error);
                     }
 
@@ -95,8 +122,8 @@ try {
             },
 
             onerror: function () {
-                var error = 'Google Docs request failed: ' +
-                        'metadata lookup HTTP request failed';
+                var error = 'Google Drive request failed: ' +
+                            'metadata lookup HTTP request failed';
                 error.reason = 'HTTP_ONERROR';
                 return cb(error);
             }
@@ -185,15 +212,20 @@ try {
         }, 1000);
     }
 
-    function isRunningTampermonkey() {
+    var TM_COMPATIBLES = [
+        'Tampermonkey',
+        'Violentmonkey' // https://github.com/calzoneman/sync/issues/713
+    ];
+
+    function isTampermonkeyCompatible() {
         try {
-            return GM_info.scriptHandler === 'Tampermonkey';
+            return TM_COMPATIBLES.indexOf(GM_info.scriptHandler) >= 0;
         } catch (error) {
             return false;
         }
     }
 
-    if (isRunningTampermonkey()) {
+    if (isTampermonkeyCompatible()) {
         unsafeWindow.getGoogleDriveMetadata = getVideoInfo;
     } else {
         debug('Using non-TM polling workaround');
@@ -204,7 +236,8 @@ try {
 
     unsafeWindow.console.log('Initialized userscript Google Drive player');
     unsafeWindow.hasDriveUserscript = true;
-    unsafeWindow.driveUserscriptVersion = '1.3';
+    // Checked against GS_VERSION from data.js
+    unsafeWindow.driveUserscriptVersion = '1.7';
 } catch (error) {
     unsafeWindow.console.error(error);
 }

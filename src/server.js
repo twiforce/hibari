@@ -52,6 +52,10 @@ import { LegacyModule } from './legacymodule';
 import { PartitionModule } from './partition/partitionmodule';
 import * as Switches from './switches';
 import { Gauge } from 'prom-client';
+import { AccountDB } from './db/account';
+import { ChannelDB } from './db/channel';
+import { AccountController } from './controller/account';
+import { EmailController } from './controller/email';
 
 var Server = function () {
     var self = this;
@@ -72,11 +76,47 @@ var Server = function () {
         initModule = this.initModule = new LegacyModule();
     }
 
+    const globalMessageBus = this.initModule.getGlobalMessageBus();
+    globalMessageBus.on('UserProfileChanged', this.handleUserProfileChange.bind(this));
+    globalMessageBus.on('ChannelDeleted', this.handleChannelDelete.bind(this));
+    globalMessageBus.on('ChannelRegistered', this.handleChannelRegister.bind(this));
+
     // database init ------------------------------------------------------
     var Database = require("./database");
     self.db = Database;
     self.db.init();
     ChannelStore.init();
+
+    const accountDB = new AccountDB(db.getDB());
+    const channelDB = new ChannelDB(db.getDB());
+
+    // controllers
+    const accountController = new AccountController(accountDB, globalMessageBus);
+
+    let emailTransport;
+    if (Config.getEmailConfig().getPasswordReset().isEnabled()) {
+        const smtpConfig = Config.getEmailConfig().getSmtp();
+        emailTransport = require("nodemailer").createTransport({
+            host: smtpConfig.getHost(),
+            port: smtpConfig.getPort(),
+            secure: smtpConfig.isSecure(),
+            auth: {
+                user: smtpConfig.getUser(),
+                pass: smtpConfig.getPassword()
+            }
+        });
+    } else {
+        emailTransport = {
+            sendMail() {
+                throw new Error('Email is not enabled on this server')
+            }
+        };
+    }
+
+    const emailController = new EmailController(
+        emailTransport,
+        Config.getEmailConfig()
+    );
 
     // webserver init -----------------------------------------------------
     const ioConfig = IOConfiguration.fromOldConfig(Config);
@@ -91,12 +131,19 @@ var Server = function () {
         channelIndex = new LocalChannelIndex();
     }
     self.express = express();
-    require("./web/webserver").init(self.express,
+    require("./web/webserver").init(
+            self.express,
             webConfig,
             ioConfig,
             clusterClient,
             channelIndex,
-            session);
+            session,
+            globalMessageBus,
+            accountController,
+            channelDB,
+            Config.getEmailConfig(),
+            emailController
+    );
 
     // http/https/sio server init -----------------------------------------
     var key = "", cert = "", ca = undefined;
@@ -237,9 +284,13 @@ Server.prototype.getChannel = function (name) {
 };
 
 Server.prototype.unloadChannel = function (chan, options) {
-    if (chan.dead) {
+    var self = this;
+
+    if (chan.dead || chan.dying) {
         return;
     }
+
+    chan.dying = true;
 
     if (!options) {
         options = {};
@@ -248,53 +299,57 @@ Server.prototype.unloadChannel = function (chan, options) {
     if (!options.skipSave) {
         chan.saveState().catch(error => {
             LOGGER.error(`Failed to save /${this.chanPath}/${chan.name} for unload: ${error.stack}`);
-        });
+        }).then(finishUnloading);
+    } else {
+        finishUnloading();
     }
 
-    chan.logger.log("[init] Channel shutting down");
-    chan.logger.close();
+    function finishUnloading() {
+        chan.logger.log("[init] Channel shutting down");
+        chan.logger.close();
 
-    chan.notifyModules("unload", []);
-    Object.keys(chan.modules).forEach(function (k) {
-        chan.modules[k].dead = true;
-        /*
-         * Automatically clean up any timeouts/intervals assigned
-         * to properties of channel modules.  Prevents a memory leak
-         * in case of forgetting to clear the timer on the "unload"
-         * module event.
-         */
-        Object.keys(chan.modules[k]).forEach(function (prop) {
-            if (chan.modules[k][prop] && chan.modules[k][prop]._onTimeout) {
-                LOGGER.warn("Detected non-null timer when unloading " +
-                        "module " + k + ": " + prop);
-                try {
-                    clearTimeout(chan.modules[k][prop]);
-                    clearInterval(chan.modules[k][prop]);
-                } catch (error) {
-                    LOGGER.error(error.stack);
+        chan.notifyModules("unload", []);
+        Object.keys(chan.modules).forEach(function (k) {
+            chan.modules[k].dead = true;
+            /*
+             * Automatically clean up any timeouts/intervals assigned
+             * to properties of channel modules.  Prevents a memory leak
+             * in case of forgetting to clear the timer on the "unload"
+             * module event.
+             */
+            Object.keys(chan.modules[k]).forEach(function (prop) {
+                if (chan.modules[k][prop] && chan.modules[k][prop]._onTimeout) {
+                    LOGGER.warn("Detected non-null timer when unloading " +
+                            "module " + k + ": " + prop);
+                    try {
+                        clearTimeout(chan.modules[k][prop]);
+                        clearInterval(chan.modules[k][prop]);
+                    } catch (error) {
+                        LOGGER.error(error.stack);
+                    }
                 }
-            }
+            });
         });
-    });
 
-    for (var i = 0; i < this.channels.length; i++) {
-        if (this.channels[i].uniqueName === chan.uniqueName) {
-            this.channels.splice(i, 1);
-            i--;
+        for (var i = 0; i < self.channels.length; i++) {
+            if (self.channels[i].uniqueName === chan.uniqueName) {
+                self.channels.splice(i, 1);
+                i--;
+            }
         }
-    }
 
-    LOGGER.info("Unloaded channel " + chan.name);
-    chan.broadcastUsercount.cancel();
-    // Empty all outward references from the channel
-    var keys = Object.keys(chan);
-    for (var i in keys) {
-        if (keys[i] !== "refCounter") {
-            delete chan[keys[i]];
+        LOGGER.info("Unloaded channel " + chan.name);
+        chan.broadcastUsercount.cancel();
+        // Empty all outward references from the channel
+        var keys = Object.keys(chan);
+        for (var i in keys) {
+            if (keys[i] !== "refCounter") {
+                delete chan[keys[i]];
+            }
         }
+        chan.dead = true;
+        promActiveChannels.dec();
     }
-    chan.dead = true;
-    promActiveChannels.dec();
 };
 
 Server.prototype.packChannelList = function (publicOnly, isAdmin) {
@@ -331,6 +386,22 @@ Server.prototype.setAnnouncement = function (data) {
         this.announcement = data;
         sio.instance.emit("announcement", data);
     }
+};
+
+Server.prototype.forceSave = function () {
+    Promise.map(this.channels, channel => {
+        try {
+            return channel.saveState().tap(() => {
+                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
+            }).catch(err => {
+                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
+            });
+        } catch (error) {
+            LOGGER.error(`Failed to save channel: ${error.stack}`);
+        }
+    }, { concurrency: 5 }).then(() => {
+        LOGGER.info('Finished save');
+    });
 };
 
 Server.prototype.shutdown = function () {
@@ -390,4 +461,91 @@ Server.prototype.reloadPartitionMap = function () {
     }
 
     this.initModule.getPartitionMapReloader().reload();
+};
+
+Server.prototype.handleUserProfileChange = function (event) {
+    try {
+        const lname = event.user.toLowerCase();
+
+        // Probably not the most efficient thing in the world, but w/e
+        // profile changes are not high volume
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            channel.users.forEach(user => {
+                if (user.getLowerName() === lname && user.account.user) {
+                    user.account.user.profile = {
+                        image: event.profile.image,
+                        text: event.profile.text
+                    };
+
+                    user.account.update();
+
+                    channel.sendUserProfile(channel.users, user);
+
+                    LOGGER.info(
+                            'Updated profile for user %s in channel %s',
+                            lname,
+                            channel.name
+                    );
+                }
+            });
+        });
+    } catch (error) {
+        LOGGER.error('handleUserProfileChange failed: %s', error);
+    }
+};
+
+Server.prototype.handleChannelDelete = function (event) {
+    try {
+        const lname = event.channel.toLowerCase();
+
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            if (channel.uniqueName === lname) {
+                channel.clearFlag(Flags.C_REGISTERED);
+
+                const users = Array.prototype.slice.call(channel.users);
+                users.forEach(u => {
+                    u.kick('Channel deleted');
+                });
+
+                if (!channel.dead && !channel.dying) {
+                    channel.emit('empty');
+                }
+
+                LOGGER.info('Processed deleted channel %s', lname);
+            }
+        });
+    } catch (error) {
+        LOGGER.error('handleChannelDelete failed: %s', error);
+    }
+};
+
+Server.prototype.handleChannelRegister = function (event) {
+    try {
+        const lname = event.channel.toLowerCase();
+
+        this.channels.forEach(channel => {
+            if (channel.dead) return;
+
+            if (channel.uniqueName === lname) {
+                channel.clearFlag(Flags.C_REGISTERED);
+
+                const users = Array.prototype.slice.call(channel.users);
+                users.forEach(u => {
+                    u.kick('Channel reloading');
+                });
+
+                if (!channel.dead && !channel.dying) {
+                    channel.emit('empty');
+                }
+
+                LOGGER.info('Processed registered channel %s', lname);
+            }
+        });
+    } catch (error) {
+        LOGGER.error('handleChannelRegister failed: %s', error);
+    }
 };
