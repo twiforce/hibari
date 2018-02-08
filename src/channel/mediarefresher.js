@@ -27,12 +27,12 @@ MediaRefresherModule.prototype.onPreMediaChange = function (data, cb) {
                 pl._refreshing = false;
                 cb(null, ChannelModule.PASSTHROUGH);
             });
-        case "vm":
+        /*case "vm":
             pl._refreshing = true;
             return this.initVidme(data, function () {
                 pl._refreshing = false;
                 cb(null, ChannelModule.PASSTHROUGH);
-            });
+            });*/
         default:
             return cb(null, ChannelModule.PASSTHROUGH);
     }
@@ -76,7 +76,7 @@ MediaRefresherModule.prototype.initVimeo = function (data, cb) {
     });
 };
 
-MediaRefresherModule.prototype.initVidme = function (data, cb) {
+/*MediaRefresherModule.prototype.initVidme = function (data, cb) {
     var self = this;
     self.refreshVidme(data, cb);
 
@@ -84,12 +84,12 @@ MediaRefresherModule.prototype.initVidme = function (data, cb) {
      * Refresh every 55 minutes.
      * The expiration is 1 hour, but refresh 5 minutes early to be safe
      */
-    self._interval = setInterval(function () {
+    /*self._interval = setInterval(function () {
         self.refreshVidme(data);
     }, 55 * 60 * 1000);
-};
+};*/
 
-MediaRefresherModule.prototype.refreshVidme = function (media, cb) {
+/*MediaRefresherModule.prototype.refreshVidme = function (media, cb) {
     var self = this;
 
     if (self.dead || self.channel.dead) {
@@ -128,6 +128,6 @@ MediaRefresherModule.prototype.refreshVidme = function (media, cb) {
             process.nextTick(cb);
         }
     });
-}
+}*/
 
 module.exports = MediaRefresherModule;
