@@ -1,3 +1,54 @@
+2018-12-07
+==========
+
+Users can now self-service request their account to be deleted, and it will be
+automatically purged after 7 days.  In order to send a notification email to
+the user about the request, copy the [email
+configuration](https://github.com/calzoneman/sync/blob/3.0/conf/example/email.toml#L43)
+to `conf/email.toml` (the same file used for password reset emails).
+
+2018-10-21
+==========
+
+The `sanitize-html` dependency has made a change that results in `"` no longer
+being replaced by `&quot;` when not inside an HTML attribute value.  This
+potentially breaks any chat filters matching quotes as `&quot;` (on my
+particular instance, this seems to be quite rare).  These filters will need to
+be updated in order to continue matching quotes.
+
+2018-08-27
+==========
+
+Support for node.js 6.x has been dropped, in order to bump the babel preset to
+generate more efficient code (8.x supports async-await and other ES6+ features
+natively and is the current node.js LTS).
+
+If you are unable to upgrade to node.js 8.x, you can revert the changes to
+package.json in this commit, however, be warned that I no longer test on 6.x.
+
+2018-06-03
+==========
+
+## Dependency upgrades
+
+In order to support node.js 10, the `bcrypt` dependency has been upgraded to
+version 2.  `bcrypt` version 2 defaults to the `$2b$` algorithm, whereas version
+1 defaults to the `$2a$` algorithm.  Existing password hashes will continue to
+be readable, however hashes created with version 2 will not be readable by
+version 1.  See https://github.com/kelektiv/node.bcrypt.js for details.
+
+In addition, the optional dependency on `v8-profiler` has been removed, since
+this is not compatible with newer versions of v8.
+
+## Supported node.js versions
+
+In accordance with the node.js release schedule, node.js 4.x, 5.x, 7.x, and 9.x
+are end-of-life and are no longer maintained upstream.  Accordingly, these
+versions are no longer supported by CyTube.
+
+Please upgrade to 8.x (LTS) or 10.x (current).  6.x is still supported, but is
+in the "maintenance" phase upstream, and should be phased out.
+
 2018-01-07
 ==========
 

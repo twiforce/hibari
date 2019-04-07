@@ -1,17 +1,15 @@
-var http = require("http");
-var https = require("https");
-var cheerio = require('cheerio');
-var Media = require("./media");
-var CustomEmbedFilter = require("./customembed").filter;
-var Config = require("./config");
-var ffmpeg = require("./ffmpeg");
-var mediaquery = require("cytube-mediaquery");
-var YouTube = require("cytube-mediaquery/lib/provider/youtube");
-var Vimeo = require("cytube-mediaquery/lib/provider/vimeo");
-var Streamable = require("cytube-mediaquery/lib/provider/streamable");
-var GoogleDrive = require("cytube-mediaquery/lib/provider/googledrive");
-var TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
-var TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
+const https = require("https");
+const Media = require("./media");
+const CustomEmbedFilter = require("./customembed").filter;
+const Config = require("./config");
+const ffmpeg = require("./ffmpeg");
+const mediaquery = require("cytube-mediaquery");
+const YouTube = require("cytube-mediaquery/lib/provider/youtube");
+const Vimeo = require("cytube-mediaquery/lib/provider/vimeo");
+const Streamable = require("cytube-mediaquery/lib/provider/streamable");
+const TwitchVOD = require("cytube-mediaquery/lib/provider/twitch-vod");
+const TwitchClip = require("cytube-mediaquery/lib/provider/twitch-clip");
+const Mixer = require("cytube-mediaquery/lib/provider/mixer");
 import { Counter } from 'prom-client';
 import { lookup as lookupCustomMetadata } from './custom-media';
 
@@ -209,7 +207,7 @@ var Getters = {
         /* TODO: require server owners to register their own API key, put in config */
         const SC_CLIENT = "2e0c82ab5a020f3a7509318146128abd";
 
-        var m = id.match(/([\w-\/\.:]+)/);
+        var m = id.match(/([\w-/.:]+)/);
         if (m) {
             id = m[1];
         } else {
@@ -370,14 +368,7 @@ var Getters = {
 
     /* ustream.tv */
     us: function (id, callback) {
-        /**
-         *2013-09-17
-         * They couldn't fucking decide whether channels should
-         * be at http://www.ustream.tv/channel/foo or just
-         * http://www.ustream.tv/foo so they do both.
-         * [](/cleese)
-         */
-        var m = id.match(/([^\?&#]+)|(channel\/[^\?&#]+)/);
+        var m = id.match(/(channel\/[^?&#]+)/);
         if (m) {
             id = m[1];
         } else {
@@ -387,25 +378,23 @@ var Getters = {
 
         var options = {
             host: "www.ustream.tv",
-            port: 80,
+            port: 443,
             path: "/" + id,
             method: "GET",
             timeout: 1000
         };
 
-        urlRetrieve(http, options, function (status, data) {
+        urlRetrieve(https, options, function (status, data) {
             if(status !== 200) {
                 callback("Ustream HTTP " + status, null);
                 return;
             }
 
-            /**
-             * Regexing the ID out of the HTML because
-             * Ustream's API is so horribly documented
-             * I literally could not figure out how to retrieve
-             * this information.
-             *
-             * [](/eatadick)
+            /*
+             * Yes, regexing this information out of the HTML sucks.
+             * No, there is not a better solution -- it seems IBM
+             * deprecated the old API (or at least replaced with an
+             * enterprise API marked "Contact sales") so fuck it.
              */
             var m = data.match(/https:\/\/www\.ustream\.tv\/embed\/(\d+)/);
             if (m) {
@@ -427,6 +416,13 @@ var Getters = {
 
     /* HLS stream */
     hl: function (id, callback) {
+        if (!/^https/.test(id)) {
+            callback(
+                "HLS links must start with HTTPS due to browser security " +
+                "policy.  See https://git.io/vpDLK for details."
+            );
+            return;
+        }
         var title = "Livestream";
         var media = new Media(id, title, "--:--", "hl");
         callback(false, media);
@@ -546,6 +542,27 @@ var Getters = {
         } catch (error) {
             process.nextTick(callback, error.message);
         }
+    },
+
+    /* mixer.com */
+    mx: function (id, callback) {
+        let m = id.match(/^[\w-]+$/);
+        if (!m) {
+            process.nextTick(callback, "Invalid mixer.com ID");
+            return;
+        }
+
+        Mixer.lookup(id).then(stream => {
+            process.nextTick(callback, null, new Media(
+                stream.id,
+                stream.title,
+                "--:--",
+                "mx",
+                stream.meta
+            ));
+        }).catch(error => {
+            process.nextTick(callback, error.message || error, null);
+        });
     }
 };
 

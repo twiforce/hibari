@@ -1,9 +1,5 @@
-var mysql = require("mysql");
-var bcrypt = require("bcrypt");
 var Config = require("./config");
 var tables = require("./database/tables");
-var net = require("net");
-var util = require("./utilities");
 import * as Metrics from './metrics/metrics';
 import knex from 'knex';
 import { GlobalBanDB } from './db/globalban';
@@ -42,7 +38,7 @@ class Database {
                     password: Config.get('mysql.password'),
                     database: Config.get('mysql.database'),
                     multipleStatements: true, // Legacy thing
-                    charset: 'UTF8MB4_GENERAL_CI'
+                    charset: 'utf8mb4'
                 },
                 pool: {
                     min: Config.get('mysql.pool-size'),
@@ -71,6 +67,8 @@ class Database {
 }
 
 module.exports.Database = Database;
+module.exports.users = require("./database/accounts");
+module.exports.channels = require("./database/channels");
 
 module.exports.init = function (newDB) {
     if (newDB) {
@@ -82,12 +80,15 @@ module.exports.init = function (newDB) {
             .catch(error => {
                 LOGGER.error('Initial database connection failed: %s', error.stack);
                 process.exit(1);
-            }).then(() => {
-                process.nextTick(legacySetup);
+            })
+            .then(() => tables.initTables())
+            .then(() => {
+                require('./database/update').checkVersion();
+                module.exports.loadAnnouncement();
+            }).catch(error => {
+                LOGGER.error(error.stack);
+                process.exit(1);
             });
-
-    module.exports.users = require("./database/accounts");
-    module.exports.channels = require("./database/channels");
 };
 
 module.exports.getDB = function getDB() {
@@ -101,16 +102,6 @@ module.exports.getGlobalBanDB = function getGlobalBanDB() {
 
     return globalBanDB;
 };
-
-function legacySetup() {
-    tables.init(module.exports.query, function (err) {
-        if (err) {
-            return;
-        }
-        require("./database/update").checkVersion();
-        module.exports.loadAnnouncement();
-    });
-}
 
 /**
  * Execute a database query
@@ -128,7 +119,7 @@ module.exports.query = function (query, sub, callback) {
     }
 
     if (process.env.SHOW_SQL) {
-        console.log(query);
+        LOGGER.debug('%s', query);
     }
 
     const end = queryLatency.startTimer();
@@ -137,6 +128,10 @@ module.exports.query = function (query, sub, callback) {
             process.nextTick(callback, null, res[0]);
         }).catch(error => {
             queryErrorCount.inc(1);
+
+            if (!sub) {
+                sub = [];
+            }
 
             let subs = JSON.stringify(sub);
             if (subs.length > 100) {

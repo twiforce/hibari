@@ -6,7 +6,6 @@ var sio = require("socket.io");
 var db = require("../database");
 import * as ChannelStore from '../channel-storage/channelstore';
 import { ChannelStateSizeError } from '../errors';
-import Promise from 'bluebird';
 import { EventEmitter } from 'events';
 import { throttle } from '../util/throttle';
 import Logger from '../logger';
@@ -80,8 +79,11 @@ function Channel(name) {
     this.name = name;
     this.uniqueName = name.toLowerCase();
     this.modules = {};
-    this.logger = new Logger.Logger(path.join(__dirname, "..", "..", "chanlogs",
-                                              this.uniqueName + ".log"));
+    this.logger = new Logger.Logger(
+        path.join(
+            __dirname, "..", "..", "chanlogs", this.uniqueName + ".log"
+        )
+    );
     this.users = [];
     this.refCounter = new ReferenceCounter(this);
     this.flags = 0;
@@ -156,7 +158,8 @@ Channel.prototype.initModules = function () {
         "./poll"          : "poll",
         "./kickban"       : "kickban",
         "./ranks"         : "rank",
-        "./accesscontrol" : "password"
+        "./accesscontrol" : "password",
+        "./anonymouscheck": "anoncheck"
     };
 
     var self = this;
@@ -320,9 +323,12 @@ Channel.prototype.checkModules = function (fn, args, cb) {
 
             if (!self.modules) {
                 LOGGER.warn(
-                    'checkModules(%s): self.modules is undefined; dead=%s',
+                    'checkModules(%s): self.modules is undefined; dead=%s,' +
+                    ' current=%s, remaining=%s',
                     fn,
-                    self.dead
+                    self.dead,
+                    m,
+                    keys
                 );
                 return;
             }
@@ -332,7 +338,7 @@ Channel.prototype.checkModules = function (fn, args, cb) {
         };
 
         args.push(next);
-        next(null, ChannelModule.PASSTHROUGH);
+        process.nextTick(next, null, ChannelModule.PASSTHROUGH);
     });
 };
 
@@ -361,6 +367,14 @@ Channel.prototype.joinUser = function (user, data) {
 
         user.channel = self;
         user.waitFlag(Flags.U_LOGGED_IN, () => {
+            if (self.dead) {
+                LOGGER.warn(
+                    'Got U_LOGGED_IN for %s after channel already unloaded',
+                    user.getName()
+                );
+                return;
+            }
+
             if (user.is(Flags.U_REGISTERED)) {
                 db.channels.getRank(self.name, user.getName(), (error, rank) => {
                     if (!error) {
@@ -456,7 +470,7 @@ Channel.prototype.acceptUser = function (user) {
         self.sendUserMeta(self.users, user);
         // TODO: Drop legacy setAFK frame after a few months
         self.broadcastAll("setAFK", { name: user.getName(), afk: afk });
-    })
+    });
     user.on("effectiveRankChange", (newRank, oldRank) => {
         this.maybeResendUserlist(user, newRank, oldRank);
     });
@@ -550,7 +564,7 @@ Channel.prototype.sendUserMeta = function (users, user, minrank) {
     var self = this;
     var userdata = self.packUserData(user);
     users.filter(function (u) {
-        return typeof minrank !== "number" || u.account.effectiveRank > minrank
+        return typeof minrank !== "number" || u.account.effectiveRank > minrank;
     }).forEach(function (u) {
         if (u.account.globalRank >= 255)  {
             u.socket.emit("setUserMeta", {
@@ -692,7 +706,6 @@ Channel.prototype.handleReadLog = function (user) {
         return;
     }
 
-    var shouldMaskIP = user.account.globalRank < 255;
     this.readLog(function (err, data) {
         if (err) {
             user.socket.emit("readChanLog", {

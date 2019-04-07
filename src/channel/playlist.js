@@ -86,7 +86,7 @@ PlaylistItem.prototype = {
     }
 };
 
-function PlaylistModule(channel) {
+function PlaylistModule(_channel) {
     ChannelModule.apply(this, arguments);
     this.items = new ULList();
     this.meta = {
@@ -241,7 +241,11 @@ PlaylistModule.prototype.packInfo = function (data, isAdmin) {
     if (this.current) {
         data.mediatitle = this.current.media.title;
         if (isAdmin) {
-            data.mediaLink = util.formatLink(this.current.media.id, this.current.media.type);
+            data.mediaLink = util.formatLink(
+                this.current.media.id,
+                this.current.media.type,
+                this.current.media.meta
+            );
         }
     } else {
         data.mediatitle = "(Nothing Playing)";
@@ -390,10 +394,6 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
 
     var id = data.id;
     var type = data.type;
-    if (type === "lib") {
-        LOGGER.warn("Outdated client: IP %s emitting queue with type=lib",
-                user.realip);
-    }
 
     if (data.pos !== "next" && data.pos !== "end") {
         return;
@@ -407,7 +407,7 @@ PlaylistModule.prototype.handleQueue = function (user, data) {
         data.title = false;
     }
 
-    var link = util.formatLink(id, type);
+    var link = util.formatLink(id, type, null);
     var perms = this.channel.modules.permissions;
 
     if (!perms.canAddVideo(user, data)) {
@@ -518,43 +518,18 @@ PlaylistModule.prototype.queueStandard = function (user, data) {
     this.channel.refCounter.ref("PlaylistModule::queueStandard");
     counters.add("playlist:queue:count", 1);
     this.semaphore.queue(function (lock) {
-        var lib = self.channel.modules.library;
-        if (lib && self.channel.is(Flags.C_REGISTERED) && !util.isLive(data.type)) {
-            // TODO: remove this check entirely once metrics are collected.
-            lib.getItem(data.id, function (err, item) {
-                if (err && err !== "Item not in library") {
-                    LOGGER.error("Failed to query for library item: %s", String(err));
-                } else if (err === "Item not in library") {
-                    counters.add("playlist:queue:library:miss", 1);
-                } else {
-                    // temp hack until all clients are updated.
-                    // previously, library search results would queue with
-                    // type "lib"; this has now been changed.
-                    data.type = item.type;
-                    counters.add("playlist:queue:library:hit", 1);
-                }
+        InfoGetter.getMedia(data.id, data.type, function (err, media) {
+            if (err) {
+                error(XSS.sanitizeText(String(err)));
+                self.channel.refCounter.unref("PlaylistModule::queueStandard");
+                return lock.release();
+            }
 
-                handleLookup();
+            self._addItem(media, data, user, function () {
+                lock.release();
+                self.channel.refCounter.unref("PlaylistModule::queueStandard");
             });
-        } else {
-            handleLookup();
-        }
-
-        function handleLookup() {
-            var channelName = self.channel.name;
-            InfoGetter.getMedia(data.id, data.type, function (err, media) {
-                if (err) {
-                    error(XSS.sanitizeText(String(err)));
-                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
-                    return lock.release();
-                }
-
-                self._addItem(media, data, user, function () {
-                    lock.release();
-                    self.channel.refCounter.unref("PlaylistModule::queueStandard");
-                });
-            });
-        }
+        });
     });
 };
 
@@ -592,10 +567,17 @@ PlaylistModule.prototype.queueYouTubePlaylist = function (user, data) {
             }
 
             self.channel.refCounter.ref("PlaylistModule::queueYouTubePlaylist");
+
+            if (self.channel.modules.library && data.shouldAddToLibrary) {
+                self.channel.modules.library.cacheMediaList(vids);
+                data.shouldAddToLibrary = false;
+            }
+
             vids.forEach(function (media) {
                 data.link = util.formatLink(media.id, media.type);
                 self._addItem(media, data, user);
             });
+
             self.channel.refCounter.unref("PlaylistModule::queueYouTubePlaylist");
 
             lock.release();
@@ -788,7 +770,7 @@ PlaylistModule.prototype.handleShuffle = function (user) {
     this.channel.users.forEach(function (u) {
         if (perms.canSeePlaylist(u)) {
             u.socket.emit("playlist", pl);
-        };
+        }
     });
     this.startPlayback();
 };
@@ -947,6 +929,15 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     if (data.duration) {
         media.seconds = data.duration;
         media.duration = util.formatTime(media.seconds);
+    } else if (media.seconds === 0 && !this.channel.modules.permissions.canAddLive(user)) {
+        // Issue #766
+        qfail("You don't have permission to add livestreams");
+        return;
+    }
+
+    if (isNaN(media.seconds)) {
+        LOGGER.warn("Detected NaN duration for %j", media);
+        return qfail("Internal error: could not determine media duration");
     }
 
     if (data.maxlength > 0 && media.seconds > data.maxlength) {
@@ -1062,16 +1053,6 @@ PlaylistModule.prototype._addItem = function (media, data, user, cb) {
     }
 };
 
-function isExpired(media) {
-    if (media.meta.expiration && media.meta.expiration < Date.now()) {
-        return true;
-    } else if (media.type === "gd") {
-        return !media.meta.object;
-    } else if (media.type === "vi") {
-        return !media.meta.direct;
-    }
-}
-
 PlaylistModule.prototype.startPlayback = function (time) {
     var self = this;
 
@@ -1143,7 +1124,7 @@ PlaylistModule.prototype.startPlayback = function (time) {
             }
         }
     );
-}
+};
 
 const UPDATE_INTERVAL = Config.get("playlist.update-interval");
 
@@ -1225,7 +1206,7 @@ PlaylistModule.prototype.clean = function (test) {
  * -flags)
  */
 function generateTargetRegex(target) {
-    const flagsre = /^(-[img]+\s+)/i
+    const flagsre = /^(-[img]+\s+)/i;
     var m = target.match(flagsre);
     var flags = "";
     if (m) {
@@ -1235,7 +1216,7 @@ function generateTargetRegex(target) {
     return new RegExp(target, flags);
 }
 
-PlaylistModule.prototype.handleClean = function (user, msg, meta) {
+PlaylistModule.prototype.handleClean = function (user, msg, _meta) {
     if (!this.channel.modules.permissions.canDeleteVideo(user)) {
         return;
     }

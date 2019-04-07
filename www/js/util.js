@@ -56,6 +56,8 @@ function formatURL(data) {
             return "https://clips.twitch.tv/" + data.id;
         case "cm":
             return data.id;
+        case "mx":
+            return "https://mixer.com/" + data.meta.mixer.channelToken;
         default:
             return "#";
     }
@@ -218,14 +220,19 @@ function addUserDropdown(entry) {
             if(IGNORED.indexOf(name) == -1) {
                 ignore.text("Unignore User");
                 IGNORED.push(name);
+                entry.addClass("userlist-ignored");
             } else {
                 ignore.text("Ignore User");
                 IGNORED.splice(IGNORED.indexOf(name), 1);
+                entry.removeClass("userlist-ignored");
             }
+            setOpt("ignorelist", IGNORED);
         });
     if(IGNORED.indexOf(name) == -1) {
+        entry.removeClass("userlist-ignored");
         ignore.text("Ignore User");
     } else {
+        entry.addClass("userlist-ignored");
         ignore.text("Unignore User");
     }
 
@@ -640,6 +647,7 @@ function showUserOptions() {
     $("#us-sort-afk").prop("checked", USEROPTS.sort_afk);
     $("#us-blink-title").val(USEROPTS.blink_title);
     $("#us-ping-sound").val(USEROPTS.boop);
+    $("#us-notifications").val(USEROPTS.notifications);
     $("#us-sendbtn").prop("checked", USEROPTS.chatbtn);
     $("#us-no-emotes").prop("checked", USEROPTS.no_emotes);
     $("#us-strip-image").prop("checked", USEROPTS.strip_image);
@@ -674,6 +682,7 @@ function saveUserOptions() {
     USEROPTS.sort_afk             = $("#us-sort-afk").prop("checked");
     USEROPTS.blink_title          = $("#us-blink-title").val();
     USEROPTS.boop                 = $("#us-ping-sound").val();
+    USEROPTS.notifications        = $("#us-notifications").val();
     USEROPTS.chatbtn              = $("#us-sendbtn").prop("checked");
     USEROPTS.no_emotes            = $("#us-no-emotes").prop("checked");
     USEROPTS.strip_image          = $("#us-strip-image").prop("checked");
@@ -755,6 +764,19 @@ function applyOpts() {
         $("#modflair").removeClass("label-success")
             .addClass("label-default");
     }
+
+    if (USEROPTS.notifications !== "never") {
+        if ("Notification" in window) {
+            Notification.requestPermission().then(function(permission) {
+                if (permission !== "granted") {
+                    USEROPTS.notifications = "never";
+                }
+            });
+        }
+        else {
+            USEROPTS.notifications = "never";
+        }
+    }    
 }
 
 function parseTimeout(t) {
@@ -941,6 +963,7 @@ function handleModPermissions() {
     $("#cs-voteskip_ratio").val(CHANNEL.opts.voteskip_ratio);
     $("#cs-allow_dupes").prop("checked", CHANNEL.opts.allow_dupes);
     $("#cs-torbanned").prop("checked", CHANNEL.opts.torbanned);
+    $("#cs-block_anonymous_users").prop("checked", CHANNEL.opts.block_anonymous_users);
     $("#cs-allow_ascii_control").prop("checked", CHANNEL.opts.allow_ascii_control);
     $("#cs-playlist_max_per_user").val(CHANNEL.opts.playlist_max_per_user || 0);
     $("#cs-playlist_max_duration_per_user").val(formatTime(CHANNEL.opts.playlist_max_duration_per_user));
@@ -1293,6 +1316,14 @@ function parseMediaLink(url) {
         };
     }
 
+    // #790
+    if ((m = url.match(/twitch\.tv\/(?:.*?)\/clip\/([A-Za-z]+)/))) {
+        return {
+            id: m[1],
+            type: "tc"
+        }
+    }
+
     if((m = url.match(/twitch\.tv\/(?:.*?)\/([cv])\/(\d+)/))) {
         return {
             id: m[1] + m[2],
@@ -1386,7 +1417,7 @@ function parseMediaLink(url) {
 
     if ((m = url.match(/(.*\.m3u8)/))) {
         return {
-            id: m[1],
+            id: url,
             type: "hl"
         };
     }
@@ -1395,6 +1426,13 @@ function parseMediaLink(url) {
         return {
             id: m[1],
             type: "sb"
+        };
+    }
+
+    if ((m = url.match(/\bmixer\.com\/([\w-]+)/))) {
+        return {
+            id: m[1],
+            type: "mx"
         };
     }
 
@@ -1441,6 +1479,20 @@ function parseMediaLink(url) {
                 id: url,
                 type: "cm"
             };
+        } else if (tmp.match(/kissanime|kimcartoon|kisscartoon/i)) {
+            Callbacks.queueFail({
+                link: url,
+                msg: "Kisscartoon and Kissanime are not supported.  See https://git.io/vxS9n" +
+                     " for more information about why these cannot be supported."
+            });
+            throw new Error("ERROR_QUEUE_KISS");
+        } else if (tmp.match(/mega\.nz/)) {
+            Callbacks.queueFail({
+                link: url,
+                msg: "Mega.nz is not supported.  See https://git.io/fx6fz" +
+                     " for more information about why mega.nz cannot be supported."
+            });
+            throw new Error("ERROR_QUEUE_MEGA");
         } else if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov|m4a)$/)) {
             return {
                 id: url,
@@ -1450,7 +1502,9 @@ function parseMediaLink(url) {
             Callbacks.queueFail({
                 link: url,
                 msg: "The file you are attempting to queue does not match the supported " +
-                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a."
+                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a. " +
+                     "For more information about why other filetypes are not supported, " +
+                     "see https://git.io/va9g9"
             });
             // Lol I forgot about this hack
             throw new Error("ERROR_QUEUE_UNSUPPORTED_EXTENSION");
@@ -1635,8 +1689,7 @@ function addChatMessage(data) {
         }
     }
 
-    pingMessage(isHighlight);
-
+    pingMessage(isHighlight, data.username, $(div.children()[2]).text());
 }
 
 function trimChatBuffer() {
@@ -1653,7 +1706,7 @@ function trimChatBuffer() {
     return count;
 }
 
-function pingMessage(isHighlight) {
+function pingMessage(isHighlight, notificationTitle, notificationBody) {
     if (!FOCUSED) {
         if (!TITLE_BLINK && (USEROPTS.blink_title === "always" ||
             USEROPTS.blink_title === "onlyping" && isHighlight)) {
@@ -1669,7 +1722,17 @@ function pingMessage(isHighlight) {
             isHighlight)) {
             CHATSOUND.play();
         }
+
+        if (USEROPTS.notifications === "always" || (USEROPTS.notifications === "onlyping" &&
+            isHighlight)) {
+            showDesktopNotification(notificationTitle, notificationBody);
+        }
     }
+}
+
+function showDesktopNotification(notificationTitle, notificationBody)
+{
+    new Notification(notificationTitle, {body: notificationBody, icon: null});
 }
 
 /* layouts */
@@ -2135,7 +2198,7 @@ function modalAlert(options) {
     var footer = $("<div/>").addClass("modal-footer");
     var okButton = $("<button/>").addClass("btn btn-primary")
             .attr({ "data-dismiss": "modal"})
-            .text("OK")
+            .text(options.dismissText || "OK")
             .appendTo(footer);
     footer.appendTo(modal.find(".modal-content"));
     modal.appendTo(document.body);
@@ -2746,7 +2809,7 @@ function initPm(user) {
     var buffer = $("<div/>").addClass("pm-buffer linewrap").appendTo(body);
     $("<hr/>").appendTo(body);
     var input = $("<input/>").addClass("form-control pm-input").attr("type", "text")
-        .attr("maxlength", 240)
+        .attr("maxlength", 320)
         .appendTo(body);
 
     input.keydown(function (ev) {
@@ -2780,7 +2843,7 @@ function initPm(user) {
     return pm;
 }
 
-function checkScriptAccess(source, type, cb) {
+function checkScriptAccess(viewSource, type, cb) {
     var pref = JSPREF[CHANNEL.name.toLowerCase() + "_" + type];
     if (pref === "ALLOW") {
         return cb("ALLOW");
@@ -2788,7 +2851,7 @@ function checkScriptAccess(source, type, cb) {
         var div = $("#chanjs-allow-prompt");
         if (div.length > 0) {
             setTimeout(function () {
-                checkScriptAccess(source, type, cb);
+                checkScriptAccess(viewSource, type, cb);
             }, 500);
             return;
         }
@@ -2802,11 +2865,14 @@ function checkScriptAccess(source, type, cb) {
             .attr("id", "chanjs-allow-prompt")
             .attr("style", "text-align: center")
             .appendTo(div);
-        form.append("<span>This channel has special features that require your permission to run.</span><br>");
-        $("<a/>").attr("href", source)
-            .attr("target", "_blank")
-            .text(type === "embedded" ? "view embedded script" : source)
-            .appendTo(form);
+        if (type === "embedded") {
+            form.append("<span>This channel has special features that require your permission to run.</span><br>");
+        } else {
+            form.append("<span>This channel has special features that require your permission to run.  This script is hosted on a third-party website and is not endorsed by the owners of the website hosting this channel.</span><br>");
+        }
+
+        $(viewSource).appendTo(form);
+
         form.append("<div id='chanjs-allow-prompt-buttons'>" +
                         "<button id='chanjs-allow' class='btn btn-xs btn-danger'>Allow</button>" +
                         "<button id='chanjs-deny' class='btn btn-xs btn-danger'>Deny</button>" +
@@ -3231,6 +3297,8 @@ function stopQueueSpinner(data) {
     // the same as the URL "ID" from the user)
     if (data && data.type === "us") {
         data = { id: data.title.match(/Ustream.tv - (.*)/)[1] };
+    } else if (data && data.type === "mx") {
+        data = { id: data.meta.mixer.channelToken };
     }
 
     var shouldRemove = (data !== null &&
@@ -3361,4 +3429,30 @@ CyTube.ui.changeVideoWidth = function uiChangeVideoWidth(direction) {
     leftPane.className = "col-md-" + chatWidth + " col-lg-" + chatWidth;
 
     handleVideoResize();
+};
+
+CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList = function (data, removePrev) {
+    if (removePrev) {
+        var user = findUserlistItem(data.name);
+        // Remove previous instance of user, if there was one
+        if(user !== null)
+            user.remove();
+    }
+    var div = $("<div/>")
+        .addClass("userlist_item");
+    var icon = $("<span/>").appendTo(div);
+    var nametag = $("<span/>").text(data.name).appendTo(div);
+    div.data("name", data.name);
+    div.data("rank", data.rank);
+    div.data("leader", Boolean(data.leader));
+    div.data("profile", data.profile);
+    div.data("meta", data.meta);
+    if (data.meta.muted || data.meta.smuted) {
+        div.data("icon", "glyphicon-volume-off");
+    } else {
+        div.data("icon", false);
+    }
+    formatUserlistItem(div);
+    addUserDropdown(div, data);
+    div.appendTo($("#userlist"));
 };

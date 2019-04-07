@@ -2,13 +2,16 @@ var ChannelModule = require("./module");
 var Flags = require("../flags");
 var Account = require("../account");
 var db = require("../database");
+import Promise from 'bluebird';
+
+const dbSetChannelRank = Promise.promisify(db.channels.setRank);
 
 const TYPE_SET_CHANNEL_RANK = {
     name: "string",
     rank: "number"
 };
 
-function RankModule(channel) {
+function RankModule(_channel) {
     ChannelModule.apply(this, arguments);
 
     if (this.channel.modules.chat) {
@@ -44,7 +47,7 @@ RankModule.prototype.sendChannelRanks = function (users) {
     });
 };
 
-RankModule.prototype.handleCmdRank = function (user, msg, meta) {
+RankModule.prototype.handleCmdRank = function (user, msg, _meta) {
     var args = msg.split(" ");
     args.shift(); /* shift off /rank */
     var name = args.shift();
@@ -177,17 +180,19 @@ RankModule.prototype.handleRankChange = function (user, data) {
 
 RankModule.prototype.updateDatabase = function (data, cb) {
     var chan = this.channel;
-    Account.rankForName(data.name, { channel: this.channel.name }, function (err, rank) {
-        if (err) {
-            return cb(err);
-        }
-
+    Account.rankForName(data.name, this.channel.name).then(rank => {
         if (rank >= data.userrank && !(rank === 4 && data.userrank === 4)) {
-            cb("You can't promote or demote someone with equal or higher rank than you.");
-            return;
+            throw new Error(
+                    "You can't promote or demote someone" +
+                    " with equal or higher rank than you."
+            );
         }
 
-        db.channels.setRank(chan.name, data.name, data.rank, cb);
+        return dbSetChannelRank(chan.name, data.name, data.rank);
+    }).then(() => {
+        process.nextTick(cb);
+    }).catch(error => {
+        process.nextTick(cb, error.message || error);
     });
 };
 

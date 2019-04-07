@@ -1,4 +1,3 @@
-var fs = require("fs");
 var path = require("path");
 var net = require("net");
 var YAML = require("yamljs");
@@ -194,7 +193,7 @@ function checkLoadConfig(configClass, filename) {
         }
 
         if (typeof error.line !== 'undefined') {
-            LOGGER.error(`Error in conf/${fileanme}: ${error} (line ${error.line})`);
+            LOGGER.error(`Error in conf/${filename}: ${error} (line ${error.line})`);
         } else {
             LOGGER.error(`Error loading conf/${filename}: ${error.stack}`);
         }
@@ -246,6 +245,28 @@ function loadEmailConfig() {
 function preprocessConfig(cfg) {
     // Root domain should start with a . for cookies
     var root = cfg.http["root-domain"];
+    if (/127\.0\.0\.1|localhost/.test(root)) {
+        LOGGER.warn(
+            "Detected 127.0.0.1 or localhost in root-domain '%s'.  This server " +
+            "will not work from other computers!  Set root-domain to the domain " +
+            "the website will be accessed from (e.g. example.com)",
+            root
+        );
+    }
+    if (/^http/.test(root)) {
+        LOGGER.warn(
+            "root-domain '%s' should not contain http:// or https://, removing it",
+            root
+        );
+        root = root.replace(/^https?:\/\//, "");
+    }
+    if (/:\d+$/.test(root)) {
+        LOGGER.warn(
+            "root-domain '%s' should not contain a trailing port, removing it",
+            root
+        );
+        root = root.replace(/:\d+$/, "");
+    }
     root = root.replace(/^\.*/, "");
     cfg.http["root-domain"] = root;
     if (root.indexOf(".") !== -1 && !net.isIP(root)) {
@@ -329,6 +350,13 @@ function preprocessConfig(cfg) {
     cfg.io["ipv4-default"] = cfg.io["ipv4-ssl"] || cfg.io["ipv4-nossl"];
     cfg.io["ipv6-default"] = cfg.io["ipv6-ssl"] || cfg.io["ipv6-nossl"];
 
+    if (/127\.0\.0\.1|localhost/.test(cfg.io["ipv4-default"])) {
+        LOGGER.warn(
+            "socket.io is bound to localhost, this server will be inaccessible " +
+            "from other computers!"
+        );
+    }
+
     // Generate RegExps for reserved names
     var reserved = cfg["reserved-names"];
     for (var key in reserved) {
@@ -357,7 +385,7 @@ function preprocessConfig(cfg) {
                 cfg["link-domain-blacklist"].join("|").replace(/\./g, "\\."), "gi");
     } else {
         // Match nothing
-        cfg["link-domain-blacklist-regex"] = new RegExp("$^", "gi");
+        cfg["link-domain-blacklist-regex"] = new RegExp("$x^", "gi");
     }
 
     if (cfg["youtube-v3-key"]) {
@@ -382,10 +410,31 @@ function preprocessConfig(cfg) {
             "for more information on registering a client ID");
     }
 
+    if (cfg["mixer-client-id"]) {
+        require("cytube-mediaquery/lib/provider/mixer").setClientID(
+                cfg["mixer-client-id"]
+        );
+    } else {
+        LOGGER.warn("No Mixer Client ID set.  Mixer.com links will " +
+            "not work.  See mixer-client-id in config.template.yaml " +
+            "for more information on registering a client ID");
+    }
+
     // Remove calzoneman from contact config (old default)
     cfg.contacts = cfg.contacts.filter(contact => {
         return contact.name !== 'calzoneman';
     });
+
+    if (!cfg.io.throttle) {
+        cfg.io.throttle = {};
+    }
+
+    cfg.io.throttle = Object.assign({
+        'in-rate-limit': Infinity
+    }, cfg.io.throttle);
+    cfg.io.throttle = Object.assign({
+        'bucket-capacity': cfg.io.throttle['in-rate-limit']
+    }, cfg.io.throttle);
 
     return cfg;
 }

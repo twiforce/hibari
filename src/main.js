@@ -30,6 +30,7 @@ function handleLine(line) {
     if (line === '/reload') {
         LOGGER.info('Reloading config');
         Config.load('config.yaml');
+        require('./web/pug').clearCache();
     } else if (line.indexOf('/switch') === 0) {
         const args = line.split(' ');
         args.shift();
@@ -49,22 +50,22 @@ function handleLine(line) {
             const ip = args.shift();
             const comment = args.join(' ');
             // TODO: this is broken by the knex refactoring
-            require('./database').globalBanIP(ip, comment, function (err, res) {
+            require('./database').globalBanIP(ip, comment, function (err, _res) {
                 if (!err) {
                     eventlog.log('[acp] ' + 'SYSTEM' + ' global banned ' + ip);
                 }
-            })
+            });
         }
     } else if (line.indexOf('/unglobalban') === 0) {
         var args = line.split(/\s+/); args.shift();
         if (args.length >= 1 && validIP(args[0]) !== 0) {
             var ip = args.shift();
             // TODO: this is broken by the knex refactoring
-            require('./database').globalUnbanIP(ip, function (err, res) {
+            require('./database').globalUnbanIP(ip, function (err, _res) {
                 if (!err) {
                     eventlog.log('[acp] ' + 'SYSTEM' + ' un-global banned ' + ip);
                 }
-            })
+            });
         }
     } else if (line.indexOf('/save') === 0) {
         sv.forceSave();
@@ -124,7 +125,19 @@ if (Config.get('service-socket.enabled')) {
     LOGGER.info('Opening service socket');
     const ServiceSocket = require('./servsock');
     const sock = new ServiceSocket();
-    sock.init(handleLine, Config.get('service-socket.socket'));
+    sock.init(
+        line => {
+            try {
+                handleLine(line);
+            } catch (error) {
+                LOGGER.error(
+                    'Error in UNIX socket command handler: %s',
+                    error.stack
+                );
+            }
+        },
+        Config.get('service-socket.socket')
+    );
 }
 
 let stdinbuf = '';
@@ -133,7 +146,11 @@ process.stdin.on('data', function (data) {
     if (stdinbuf.indexOf('\n') !== -1) {
         let line = stdinbuf.substring(0, stdinbuf.indexOf('\n'));
         stdinbuf = stdinbuf.substring(stdinbuf.indexOf('\n') + 1);
-        handleLine(line);
+        try {
+            handleLine(line);
+        } catch (error) {
+            LOGGER.error('Command line input handler failed: %s', error.stack);
+        }
     }
 });
 
@@ -143,6 +160,6 @@ process.on('SIGUSR2', () => {
 });
 
 require('bluebird');
-process.on('unhandledRejection', function (reason, promise) {
+process.on('unhandledRejection', function (reason, _promise) {
     LOGGER.error('Unhandled rejection: %s', reason.stack);
 });

@@ -1,48 +1,7 @@
 (function () {
-    var root, crypto, net = false;
-
-    if (typeof window === "undefined") {
-        root = module.exports;
-    } else {
-        root = window.utils = {};
-    }
-
-    if (typeof require === "function") {
-        crypto = require("crypto");
-        net = require("net");
-    }
-
-    var Set = function (items) {
-        this._items = {};
-        var self = this;
-        if (items instanceof Array)
-            items.forEach(function (it) { self.add(it); });
-    };
-
-    Set.prototype.contains = function (what) {
-        return (what in this._items);
-    };
-
-    Set.prototype.add = function (what) {
-        this._items[what] = true;
-    };
-
-    Set.prototype.remove = function (what) {
-        if (what in this._items)
-            delete this._items[what];
-    };
-
-    Set.prototype.clear = function () {
-        this._items = {};
-    };
-
-    Set.prototype.forEach = function (fn) {
-        for (var k in this._items) {
-            fn(k);
-        }
-    };
-
-    root.Set = Set;
+    const root = module.exports;
+    const net = require("net");
+    const crypto = require("crypto");
 
     root.isValidChannelName = function (name) {
         return name.match(/^[\w-]{1,30}$/);
@@ -157,6 +116,8 @@
     root.parseTime = function (time) {
         var parts = time.split(":").reverse();
         var seconds = 0;
+        // TODO: consider refactoring to remove this suppression
+        /* eslint no-fallthrough: off */
         switch (parts.length) {
             case 3:
                 seconds += parseInt(parts[2]) * 3600;
@@ -216,7 +177,7 @@
         };
     },
 
-    root.formatLink = function (id, type) {
+    root.formatLink = function (id, type, meta) {
         switch (type) {
             case "yt":
                 return "https://youtu.be/" + id;
@@ -250,6 +211,12 @@
                 return "https://clips.twitch.tv/" + id;
             case "cm":
                 return id;
+            case "mx":
+                if (meta !== null) {
+                    return `https://mixer.com/${meta.mixer.channelToken}`;
+                } else {
+                    return `https://mixer.com/${id}`;
+                }
             default:
                 return "";
         }
@@ -265,6 +232,7 @@
             case "im":
             case "hb":
             case "hl":
+            case "mx":
                 return true;
             default:
                 return false;
@@ -278,12 +246,12 @@
         var shasum = crypto.createHash("sha1");
         shasum.update(data);
         return shasum.digest("hex");
-    }
+    },
 
     root.cloakIP = function (ip) {
         if (ip.match(/\d+\.\d+(\.\d+)?(\.\d+)?/)) {
             return cloakIPv4(ip);
-        } else if (ip.match(/([0-9a-f]{1,4}\:){1,7}[0-9a-f]{1,4}/)) {
+        } else if (ip.match(/([0-9a-f]{1,4}:){1,7}[0-9a-f]{1,4}/)) {
             return cloakIPv6(ip);
         } else {
             return ip;
@@ -323,5 +291,5 @@
             while (parts.length < 4) parts.push("*");
             return parts.join(":");
         }
-    }
+    };
 })();

@@ -201,7 +201,7 @@ class IOServer {
         if (auth) {
             promises.push(verifySession(auth).then(user => {
                 socket.context.user = Object.assign({}, user);
-            }).catch(error => {
+            }).catch(_error => {
                 authFailureCount.inc(1);
                 LOGGER.warn('Unable to verify session for %s - ignoring auth',
                         socket.context.ipAddress);
@@ -210,7 +210,7 @@ class IOServer {
 
         promises.push(getAliases(socket.context.ipAddress).then(aliases => {
             socket.context.aliases = aliases;
-        }).catch(error => {
+        }).catch(_error => {
             LOGGER.warn('Unable to load aliases for %s',
                     socket.context.ipAddress);
         }));
@@ -218,21 +218,26 @@ class IOServer {
         Promise.all(promises).then(() => next());
     }
 
-    metricsEmittingMiddleware(socket, next) {
-        emitMetrics(socket);
-        next();
-    }
-
     handleConnection(socket) {
-        // TODO: move out of handleConnection if possible
-        // see: https://github.com/calzoneman/sync/issues/724
         if (!this.checkIPLimit(socket)) {
             return;
         }
 
+        this.setRateLimiter(socket);
+
+        emitMetrics(socket);
+
         LOGGER.info('Accepted socket from %s', socket.context.ipAddress);
         counters.add('socket.io:accept', 1);
-        socket.once('disconnect', () => counters.add('socket.io:disconnect', 1));
+        socket.once('disconnect', (reason, reasonDetail) => {
+            LOGGER.info(
+                '%s disconnected (%s%s)',
+                socket.context.ipAddress,
+                reason,
+                reasonDetail ? ` - ${reasonDetail}` : ''
+            );
+            counters.add('socket.io:disconnect', 1);
+        });
 
         const user = new User(socket, socket.context.ipAddress, socket.context.user);
         if (socket.context.user) {
@@ -243,6 +248,26 @@ class IOServer {
         if (announcement !== null) {
             socket.emit('announcement', announcement);
         }
+    }
+
+    setRateLimiter(socket) {
+        const refillRate = () => Config.get('io.throttle.in-rate-limit');
+        const capacity = () => Config.get('io.throttle.bucket-capacity');
+
+        socket._inRateLimit = new TokenBucket(capacity, refillRate);
+
+        socket.on('cytube:count-event', () => {
+            if (socket._inRateLimit.throttle()) {
+                LOGGER.warn(
+                    'Kicking client %s: exceeded in-rate-limit of %d',
+                    socket.context.ipAddress,
+                    refillRate()
+                );
+
+                socket.emit('kick', { reason: 'Rate limit exceeded' });
+                socket.disconnect();
+            }
+        });
     }
 
     initSocketIO() {
@@ -257,7 +282,6 @@ class IOServer {
         io.use(this.cookieParsingMiddleware.bind(this));
         io.use(this.ipSessionCookieMiddleware.bind(this));
         io.use(this.authUserMiddleware.bind(this));
-        io.use(this.metricsEmittingMiddleware.bind(this));
         io.on('connection', this.handleConnection.bind(this));
     }
 
@@ -266,8 +290,37 @@ class IOServer {
             throw new Error('Cannot bind: socket.io has not been initialized yet');
         }
 
+        const engineOpts = {
+            /*
+             * Set ping timeout to 2 minutes to avoid spurious reconnects
+             * during transient network issues.  The default of 5 minutes
+             * is too aggressive.
+             *
+             * https://github.com/calzoneman/sync/issues/780
+             */
+            pingTimeout: 120000,
+
+            /*
+             * Per `ws` docs: "Note that Node.js has a variety of issues with
+             * high-performance compression, where increased concurrency,
+             * especially on Linux, can lead to catastrophic memory
+             * fragmentation and slow performance."
+             *
+             * CyTube's frames are ordinarily quite small, so there's not much
+             * point in compressing them.
+             */
+            perMessageDeflate: false,
+            httpCompression: false,
+
+            /*
+             * Default is 10MB.
+             * Even 1MiB seems like a generous limit...
+             */
+            maxHttpBufferSize: 1 << 20
+        };
+
         servers.forEach(server => {
-            this.io.attach(server);
+            this.io.attach(server, engineOpts);
         });
     }
 }
@@ -283,10 +336,12 @@ const outgoingPacketCount = new Counter({
 function patchSocketMetrics() {
     const onevent = Socket.prototype.onevent;
     const packet = Socket.prototype.packet;
+    const emit = require('events').EventEmitter.prototype.emit;
 
     Socket.prototype.onevent = function patchedOnevent() {
         onevent.apply(this, arguments);
         incomingEventCount.inc(1);
+        emit.call(this, 'cytube:count-event');
     };
 
     Socket.prototype.packet = function patchedPacket() {
@@ -350,6 +405,10 @@ const promSocketDisconnect = new Counter({
     name: 'cytube_sockets_disconnects_total',
     help: 'Counter for number of connections disconnected.'
 });
+const promSocketReconnect = new Counter({
+    name: 'cytube_sockets_reconnects_total',
+    help: 'Counter for number of reconnects detected.'
+});
 function emitMetrics(sock) {
     try {
         let closed = false;
@@ -378,6 +437,15 @@ function emitMetrics(sock) {
                 promSocketDisconnect.inc(1);
             } catch (error) {
                 LOGGER.error('Error emitting disconnect metrics for socket (ip=%s): %s',
+                        sock.context.ipAddress, error.stack);
+            }
+        });
+
+        sock.once('reportReconnect', () => {
+            try {
+                promSocketReconnect.inc(1, new Date());
+            } catch (error) {
+                LOGGER.error('Error emitting reconnect metrics for socket (ip=%s): %s',
                         sock.context.ipAddress, error.stack);
             }
         });
@@ -420,6 +488,18 @@ module.exports = {
             } else {
                 const server = http.createServer().listen(bind.port, bind.ip);
                 servers.push(server);
+                server.on("error", error => {
+                    if (error.code === "EADDRINUSE") {
+                        LOGGER.fatal(
+                            "Could not bind %s: address already in use.  Check " +
+                            "whether another application has already bound this " +
+                            "port, or whether another instance of this server " +
+                            "is running.",
+                            id
+                        );
+                        process.exit(1);
+                    }
+                });
             }
 
             uniqueListenAddresses.add(id);

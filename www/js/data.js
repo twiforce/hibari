@@ -41,7 +41,6 @@ var socket = {
         console.log(arguments);
     }
 };
-var IGNORED = [];
 var CHATHIST = [];
 var CHATHISTIDX = 0;
 var CHATTHROTTLE = false;
@@ -76,6 +75,11 @@ CyTube.ui = {
 CyTube.featureFlag = {
     efficientEmotes: true
 };
+CyTube.channelCustomizations = {
+    cssHash: null,
+    jsHash: null
+};
+CyTube._internal_do_not_use_or_you_will_be_banned = {};
 
 function getOpt(k) {
     var v = NO_STORAGE ? readCookie(k) : localStorage.getItem(k);
@@ -105,6 +109,8 @@ function getOrDefault(k, def) {
     return v;
 }
 
+var IGNORED = getOrDefault("ignorelist", []);
+
 var USEROPTS = {
     theme                : getOrDefault("theme", DEFAULT_THEME), // Set in head template
     layout               : getOrDefault("layout", "fluid"),
@@ -130,7 +136,8 @@ var USEROPTS = {
     emotelist_sort       : getOrDefault("emotelist_sort", true),
     no_emotes            : getOrDefault("no_emotes", false),
     strip_image          : getOrDefault("strip_image", false),
-    chat_tab_method      : getOrDefault("chat_tab_method", "Cycle options")
+    chat_tab_method      : getOrDefault("chat_tab_method", "Cycle options"),
+    notifications        : getOrDefault("notifications", "never")
 };
 
 /* Backwards compatibility check */

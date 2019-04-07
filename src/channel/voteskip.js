@@ -2,7 +2,7 @@ var ChannelModule = require("./module");
 var Flags = require("../flags");
 var Poll = require("../poll").Poll;
 
-function VoteskipModule(channel) {
+function VoteskipModule(_channel) {
     ChannelModule.apply(this, arguments);
 
     this.poll = false;
@@ -40,7 +40,10 @@ VoteskipModule.prototype.handleVoteskip = function (user) {
         this.poll = new Poll("[server]", "voteskip", ["skip"], false);
     }
 
-    this.poll.vote(user.realip, 0);
+    if (!this.poll.vote(user.realip, 0)) {
+        // Vote was already recorded for this IP, no update needed
+        return;
+    }
 
     var title = "";
     if (this.channel.modules.playlist.current) {
@@ -83,6 +86,18 @@ VoteskipModule.prototype.update = function () {
             `- no permission (${noPermission}); ` +
             `ratio = ${this.channel.modules.options.get("voteskip_ratio")}`;
         this.channel.logger.log(`[playlist] Voteskip passed: ${info}`);
+        this.channel.broadcastAll(
+            'chatMsg',
+            {
+                username: "[voteskip]",
+                msg: `Voteskip passed: ${info}`,
+                meta: {
+                    addClass: "server-whisper",
+                    addClassToNameAndTimestamp: true
+                },
+                time: Date.now()
+            }
+        );
         this.reset();
         this.channel.modules.playlist._playNext();
     } else {
@@ -128,7 +143,7 @@ VoteskipModule.prototype.reset = function reset() {
     this.sendVoteskipData(this.channel.users);
 };
 
-VoteskipModule.prototype.onMediaChange = function (data) {
+VoteskipModule.prototype.onMediaChange = function (_data) {
     this.reset();
 };
 

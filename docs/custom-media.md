@@ -1,10 +1,6 @@
 CyTube Custom Content Metadata
 ==============================
 
-Last Updated: 2017-08-08
-
-Status: Experimental
-
 ## Purpose ##
 
 CyTube currently supports adding custom audio/video content by allowing the user
@@ -75,8 +71,10 @@ The following MIME types are accepted for the `contentType` field:
   * `video/webm`
   * `video/ogg`
   * `application/x-mpegURL` (HLS streams)
-    - HLS is only supported for livestreams.  Metadata with HLS sources
-      but without `live: true` will be rejected.
+    - HLS is only tested with livestreams.  VODs are accepted, but I do not test
+      this functionality.
+  * `application/dash+xml` (DASH streams)
+    - Support for DASH is experimental
   * ~~`rtmp/flv`~~
     - In light of Adobe phasing out support for Flash, and many browsers
       already dropping support, RTMP is not supported by this feature.

@@ -24,6 +24,7 @@ module.exports = {
         fs.exists(gdvttpath, function (exists) {
             exists || fs.mkdirSync(gdvttpath);
         });
+
         singleton = new Server();
         return singleton;
     },
@@ -35,7 +36,6 @@ module.exports = {
 
 var path = require("path");
 var fs = require("fs");
-var http = require("http");
 var https = require("https");
 var express = require("express");
 var Channel = require("./channel/channel");
@@ -46,15 +46,10 @@ import LocalChannelIndex from './web/localchannelindex';
 import { PartitionChannelIndex } from './partition/partitionchannelindex';
 import IOConfiguration from './configuration/ioconfig';
 import WebConfiguration from './configuration/webconfig';
-import NullClusterClient from './io/cluster/nullclusterclient';
 import session from './session';
 import { LegacyModule } from './legacymodule';
 import { PartitionModule } from './partition/partitionmodule';
-import * as Switches from './switches';
 import { Gauge } from 'prom-client';
-import { AccountDB } from './db/account';
-import { ChannelDB } from './db/channel';
-import { AccountController } from './controller/account';
 import { EmailController } from './controller/email';
 
 var Server = function () {
@@ -87,12 +82,6 @@ var Server = function () {
     self.db.init();
     ChannelStore.init();
 
-    const accountDB = new AccountDB(db.getDB());
-    const channelDB = new ChannelDB(db.getDB());
-
-    // controllers
-    const accountController = new AccountController(accountDB, globalMessageBus);
-
     let emailTransport;
     if (Config.getEmailConfig().getPasswordReset().isEnabled()) {
         const smtpConfig = Config.getEmailConfig().getSmtp();
@@ -108,7 +97,7 @@ var Server = function () {
     } else {
         emailTransport = {
             sendMail() {
-                throw new Error('Email is not enabled on this server')
+                throw new Error('Email is not enabled on this server');
             }
         };
     }
@@ -125,7 +114,9 @@ var Server = function () {
     var channelIndex;
     if (Config.get("enable-partition")) {
         channelIndex = new PartitionChannelIndex(
-                initModule.getRedisClientProvider().get()
+                initModule.getRedisClientProvider().get(),
+                initModule.getRedisClientProvider().get(),
+                initModule.partitionConfig.getChannelIndexChannel()
         );
     } else {
         channelIndex = new LocalChannelIndex();
@@ -139,8 +130,6 @@ var Server = function () {
             channelIndex,
             session,
             globalMessageBus,
-            accountController,
-            channelDB,
             Config.getEmailConfig(),
             emailController
     );
@@ -173,18 +162,44 @@ var Server = function () {
         if (bind.https && Config.get("https.enabled")) {
             self.servers[id] = https.createServer(opts, self.express)
                                     .listen(bind.port, bind.ip);
+            self.servers[id].on("error", error => {
+                if (error.code === "EADDRINUSE") {
+                    LOGGER.fatal(
+                        "Could not bind %s: address already in use.  Check " +
+                        "whether another application has already bound this " +
+                        "port, or whether another instance of this server " +
+                        "is running.",
+                        id
+                    );
+                    process.exit(1);
+                }
+            });
             self.servers[id].on("clientError", function (err, socket) {
                 try {
                     socket.destroy();
                 } catch (e) {
+                    // Ignore
                 }
             });
         } else if (bind.http) {
             self.servers[id] = self.express.listen(bind.port, bind.ip);
+            self.servers[id].on("error", error => {
+                if (error.code === "EADDRINUSE") {
+                    LOGGER.fatal(
+                        "Could not bind %s: address already in use.  Check " +
+                        "whether another application has already bound this " +
+                        "port, or whether another instance of this server " +
+                        "is running.",
+                        id
+                    );
+                    process.exit(1);
+                }
+            });
             self.servers[id].on("clientError", function (err, socket) {
                 try {
                     socket.destroy();
                 } catch (e) {
+                    // Ignore
                 }
             });
         }
@@ -341,12 +356,11 @@ Server.prototype.unloadChannel = function (chan, options) {
         LOGGER.info("Unloaded channel " + chan.name);
         chan.broadcastUsercount.cancel();
         // Empty all outward references from the channel
-        var keys = Object.keys(chan);
-        for (var i in keys) {
-            if (keys[i] !== "refCounter") {
-                delete chan[keys[i]];
+        Object.keys(chan).forEach(key => {
+            if (key !== "refCounter") {
+                delete chan[key];
             }
-        }
+        });
         chan.dead = true;
         promActiveChannels.dec();
     }
@@ -361,7 +375,6 @@ Server.prototype.packChannelList = function (publicOnly, isAdmin) {
         return c.modules.options && c.modules.options.get("show_public");
     });
 
-    var self = this;
     return channels.map(function (c) {
         return c.packInfo(isAdmin);
     });
@@ -389,15 +402,17 @@ Server.prototype.setAnnouncement = function (data) {
 };
 
 Server.prototype.forceSave = function () {
-    Promise.map(this.channels, channel => {
+    Promise.map(this.channels, async channel => {
         try {
-            return channel.saveState().tap(() => {
-                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
-            }).catch(err => {
-                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
-            });
+            await channel.saveState();
+            LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
         } catch (error) {
-            LOGGER.error(`Failed to save channel: ${error.stack}`);
+            LOGGER.error(
+                'Failed to save /%s/%s: %s',
+                this.chanPath,
+                channel ? channel.name : '<undefined>',
+                error.stack
+            );
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info('Finished save');
@@ -406,15 +421,17 @@ Server.prototype.forceSave = function () {
 
 Server.prototype.shutdown = function () {
     LOGGER.info("Unloading channels");
-    Promise.map(this.channels, channel => {
+    Promise.map(this.channels, async channel => {
         try {
-            return channel.saveState().tap(() => {
-                LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
-            }).catch(err => {
-                LOGGER.error(`Failed to save /${this.chanPath}/${channel.name}: ${err.stack}`);
-            });
+            await channel.saveState();
+            LOGGER.info(`Saved /${this.chanPath}/${channel.name}`);
         } catch (error) {
-            LOGGER.error(`Failed to save channel: ${error.stack}`);
+            LOGGER.error(
+                'Failed to save /%s/%s: %s',
+                this.chanPath,
+                channel ? channel.name : '<undefined>',
+                error.stack
+            );
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info("Goodbye");
@@ -427,28 +444,41 @@ Server.prototype.shutdown = function () {
 
 Server.prototype.handlePartitionMapChange = function () {
     const channels = Array.prototype.slice.call(this.channels);
-    Promise.map(channels, channel => {
+    Promise.map(channels, async channel => {
         if (channel.dead) {
             return;
         }
 
         if (!this.partitionDecider.isChannelOnThisPartition(channel.uniqueName)) {
             LOGGER.info("Partition changed for " + channel.uniqueName);
-            return channel.saveState().then(() => {
-                channel.broadcastAll("partitionChange",
-                        this.partitionDecider.getPartitionForChannel(channel.uniqueName));
+            try {
+                await channel.saveState();
+
+                channel.broadcastAll(
+                    "partitionChange",
+                    this.partitionDecider.getPartitionForChannel(
+                        channel.uniqueName
+                    )
+                );
+
                 const users = Array.prototype.slice.call(channel.users);
                 users.forEach(u => {
                     try {
                         u.socket.disconnect();
                     } catch (error) {
+                        // Ignore
                     }
                 });
+
                 this.unloadChannel(channel, { skipSave: true });
-            }).catch(error => {
-                LOGGER.error(`Failed to unload /${this.chanPath}/${channel.name} for ` +
-                                  `partition map flip: ${error.stack}`);
-            });
+            } catch (error) {
+                LOGGER.error(
+                    'Failed to unload /%s/%s for partition map flip: %s',
+                    this.chanPath,
+                    channel ? channel.name : '<undefined>',
+                    error.stack
+                );
+            }
         }
     }, { concurrency: 5 }).then(() => {
         LOGGER.info("Partition reload complete");

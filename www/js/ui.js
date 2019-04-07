@@ -1,12 +1,18 @@
 /* window focus/blur */
-$(window).focus(function() {
+CyTube.ui.onPageFocus = function () {
     FOCUSED = true;
     clearInterval(TITLE_BLINK);
     TITLE_BLINK = false;
     document.title = PAGETITLE;
-}).blur(function() {
+};
+
+CyTube.ui.onPageBlur = function (event) {
     FOCUSED = false;
-});
+};
+
+$(window).focus(CyTube.ui.onPageFocus).blur(CyTube.ui.onPageBlur);
+// See #783
+$(".modal").focus(CyTube.ui.onPageFocus);
 
 $("#togglemotd").click(function () {
     var hidden = $("#motd").css("display") === "none";

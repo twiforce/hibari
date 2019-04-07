@@ -35,6 +35,10 @@ Callbacks = {
         scrollChat();
     },
 
+    reconnect: function () {
+        socket.emit("reportReconnect");
+    },
+
     // Socket.IO error callback
     error: function (msg) {
         window.SOCKET_ERROR_REASON = msg;
@@ -266,7 +270,14 @@ Callbacks = {
 
         if(opts.externaljs.trim() != "" && !USEROPTS.ignore_channeljs &&
            opts.externaljs !== CHANNEL.opts.externaljs) {
-            checkScriptAccess(opts.externaljs, "external", function (pref) {
+            var viewSource = document.createElement("a");
+            viewSource.className = "btn btn-danger";
+            viewSource.setAttribute("role", "button");
+            viewSource.setAttribute("target", "_blank");
+            viewSource.setAttribute("rel", "noopener noreferer");
+            viewSource.textContent = "View external script source";
+            viewSource.href = opts.externaljs;
+            checkScriptAccess(viewSource, "external", function (pref) {
                 if (pref === "ALLOW") {
                     $.getScript(opts.externaljs);
                 }
@@ -289,41 +300,54 @@ Callbacks = {
     },
 
     channelCSSJS: function(data) {
-        $("#chancss").remove();
-        CHANNEL.css = data.css;
-        $("#cs-csstext").val(data.css);
-        if(data.css && !USEROPTS.ignore_channelcss) {
-            $("<style/>").attr("type", "text/css")
-                .attr("id", "chancss")
-                .text(data.css)
-                .appendTo($("head"));
+        if (CyTube.channelCustomizations.cssHash !== data.cssHash) {
+            $("#chancss").remove();
+            CHANNEL.css = data.css;
+            $("#cs-csstext").val(data.css);
+            if(data.css && !USEROPTS.ignore_channelcss) {
+                $("<style/>").attr("type", "text/css")
+                    .attr("id", "chancss")
+                    .text(data.css)
+                    .appendTo($("head"));
+            }
+
+            if (data.cssHash) {
+                CyTube.channelCustomizations.cssHash = data.cssHash;
+            }
         }
 
-        $("#chanjs").remove();
-        CHANNEL.js = data.js;
-        $("#cs-jstext").val(data.js);
+        if (CyTube.channelCustomizations.jsHash !== data.jsHash) {
+            $("#chanjs").remove();
+            CHANNEL.js = data.js;
+            $("#cs-jstext").val(data.js);
 
-        if(data.js && !USEROPTS.ignore_channeljs) {
-            var src = data.js
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/\n/g, "<br>")
-                .replace(/\t/g, "    ")
-                .replace(/ /g, "&nbsp;");
-            src = encodeURIComponent(src);
+            if(data.js && !USEROPTS.ignore_channeljs) {
+                var viewSource = document.createElement("button");
+                viewSource.className = "btn btn-danger";
+                viewSource.textContent = "View inline script source";
+                viewSource.onclick = function () {
+                    var content = document.createElement("pre");
+                    content.textContent = data.js;
+                    modalAlert({
+                        title: "Inline JS",
+                        htmlContent: content.outerHTML,
+                        dismissText: "Close"
+                    });
+                };
 
-            var viewsource = "data:text/html, <body style='font: 9pt monospace;" +
-                             "max-width:60rem;margin:0 auto;padding:4rem;'>" +
-                             src + "</body>";
-            checkScriptAccess(viewsource, "embedded", function (pref) {
-                if (pref === "ALLOW") {
-                    $("<script/>").attr("type", "text/javascript")
-                        .attr("id", "chanjs")
-                        .text(data.js)
-                        .appendTo($("body"));
-                }
-            });
+                checkScriptAccess(viewSource, "embedded", function (pref) {
+                    if (pref === "ALLOW") {
+                        $("<script/>").attr("type", "text/javascript")
+                            .attr("id", "chanjs")
+                            .text(data.js)
+                            .appendTo($("body"));
+                    }
+                });
+            }
+
+            if (data.jsHash) {
+                CyTube.channelCustomizations.jsHash = data.jsHash;
+            }
         }
     },
 
@@ -464,10 +488,12 @@ Callbacks = {
             return;
         }
 
+        var ping = false;
+
         if (data.username === CLIENT.name) {
             name = data.to;
         } else {
-            pingMessage(true);
+            ping = true;
         }
         var pm = initPm(name);
         var msg = formatChatMessage(data, pm.data("last"));
@@ -476,6 +502,10 @@ Callbacks = {
         buffer.scrollTop(buffer.prop("scrollHeight"));
         if (pm.find(".panel-body").is(":hidden")) {
             pm.removeClass("panel-default").addClass("panel-primary");
+        }
+
+        if (ping) {
+            pingMessage(true, "PM: " + name, $(msg.children()[2]).text());
         }
     },
 
@@ -487,32 +517,13 @@ Callbacks = {
     userlist: function(data) {
         $(".userlist_item").remove();
         for(var i = 0; i < data.length; i++) {
-            Callbacks.addUser(data[i]);
+            CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList(data[i], false);
         }
+        sortUserlist();
     },
 
     addUser: function(data) {
-        var user = findUserlistItem(data.name);
-        // Remove previous instance of user, if there was one
-        if(user !== null)
-            user.remove();
-        var div = $("<div/>")
-            .addClass("userlist_item");
-        var icon = $("<span/>").appendTo(div);
-        var nametag = $("<span/>").text(data.name).appendTo(div);
-        div.data("name", data.name);
-        div.data("rank", data.rank);
-        div.data("leader", Boolean(data.leader));
-        div.data("profile", data.profile);
-        div.data("meta", data.meta);
-        if (data.meta.muted || data.meta.smuted) {
-            div.data("icon", "glyphicon-volume-off");
-        } else {
-            div.data("icon", false);
-        }
-        formatUserlistItem(div);
-        addUserDropdown(div, data);
-        div.appendTo($("#userlist"));
+        CyTube._internal_do_not_use_or_you_will_be_banned.addUserToList(data, true);
         sortUserlist();
     },
 
@@ -939,6 +950,7 @@ Callbacks = {
 
         }
         $("<span/>").addClass("label label-default pull-right").data('timestamp',data.timestamp).appendTo(poll)
+            .attr('title', 'Poll opened by ' + data.initiator).data('initiator',data.initiator)
             .text(new Date(data.timestamp).toTimeString().split(" ")[0]);
 
         poll.find(".btn").attr("disabled", !hasPermission("pollvote"));

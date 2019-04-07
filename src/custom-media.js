@@ -2,7 +2,6 @@ import { ValidationError } from './errors';
 import { parse as urlParse } from 'url';
 import net from 'net';
 import Media from './media';
-import { hash } from './util/hash';
 import { get as httpGet } from 'http';
 import { get as httpsGet } from 'https';
 
@@ -31,8 +30,7 @@ const SOURCE_CONTENT_TYPES = new Set([
 ]);
 
 const LIVE_ONLY_CONTENT_TYPES = new Set([
-    'application/dash+xml',
-    'application/x-mpegURL'
+    'application/dash+xml'
 ]);
 
 export function lookup(url, opts) {

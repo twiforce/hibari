@@ -14,7 +14,7 @@ const LOGGER = require('@calzoneman/jsli')('bgtask');
 var init = null;
 
 /* Alias cleanup */
-function initAliasCleanup(Server) {
+function initAliasCleanup() {
     var CLEAN_INTERVAL = parseInt(Config.get("aliases.purge-interval"));
     var CLEAN_EXPIRE = parseInt(Config.get("aliases.max-age"));
 
@@ -28,7 +28,7 @@ function initAliasCleanup(Server) {
 }
 
 /* Password reset cleanup */
-function initPasswordResetCleanup(Server) {
+function initPasswordResetCleanup() {
     var CLEAN_INTERVAL = 8*60*60*1000;
 
     setInterval(function () {
@@ -44,16 +44,26 @@ function initChannelDumper(Server) {
     var CHANNEL_SAVE_INTERVAL = parseInt(Config.get("channel-save-interval"))
                                 * 60000;
     setInterval(function () {
+        if (Server.channels.length === 0) {
+            return;
+        }
+
         var wait = CHANNEL_SAVE_INTERVAL / Server.channels.length;
         LOGGER.info(`Saving channels with delay ${wait}`);
         Promise.reduce(Server.channels, (_, chan) => {
-            return Promise.delay(wait).then(() => {
+            return Promise.delay(wait).then(async () => {
                 if (!chan.dead && chan.users && chan.users.length > 0) {
-                    return chan.saveState().tap(() => {
+                    try {
+                        await chan.saveState();
                         LOGGER.info(`Saved /${chanPath}/${chan.name}`);
-                    }).catch(err => {
-                        LOGGER.error(`Failed to save /${chanPath}/${chan.name}: ${err.stack}`);
-                    });
+                    } catch (error) {
+                        LOGGER.error(
+                            'Failed to save /%s/%s: %s',
+                            chanPath,
+                            chan ? chan.name : '<undefined>',
+                            error.stack
+                        );
+                    }
                 }
             }).catch(error => {
                 LOGGER.error(`Failed to save channel: ${error.stack}`);
@@ -64,6 +74,24 @@ function initChannelDumper(Server) {
     }, CHANNEL_SAVE_INTERVAL);
 }
 
+function initAccountCleanup() {
+    setInterval(() => {
+        (async () => {
+            let rows = await db.users.findAccountsPendingDeletion();
+            for (let row of rows) {
+                try {
+                    await db.users.purgeAccount(row.id);
+                    LOGGER.info('Purged account from request %j', row);
+                } catch (error) {
+                    LOGGER.error('Error purging account %j: %s', row, error.stack);
+                }
+            }
+        })().catch(error => {
+            LOGGER.error('Error purging deleted accounts: %s', error.stack);
+        });
+    }, 3600 * 1000);
+}
+
 module.exports = function (Server) {
     if (init === Server) {
         LOGGER.warn("Attempted to re-init background tasks");
@@ -71,7 +99,8 @@ module.exports = function (Server) {
     }
 
     init = Server;
-    initAliasCleanup(Server);
+    initAliasCleanup();
     initChannelDumper(Server);
-    initPasswordResetCleanup(Server);
+    initPasswordResetCleanup();
+    initAccountCleanup();
 };

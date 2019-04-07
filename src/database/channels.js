@@ -2,25 +2,14 @@ var db = require("../database");
 var valid = require("../utilities").isValidChannelName;
 var fs = require("fs");
 var path = require("path");
-var tables = require("./tables");
 var Flags = require("../flags");
 var util = require("../utilities");
+import { createMySQLDuplicateKeyUpdate } from '../util/on-duplicate-key-update';
+import Config from '../config';
 
 const LOGGER = require('@calzoneman/jsli')('database/channels');
 
 var blackHole = function () { };
-
-function dropTable(name, callback) {
-    db.query("DROP TABLE `" + name + "`", callback);
-}
-
-function initTables(name, owner, callback) {
-    if (!valid(name)) {
-        callback("Invalid channel name", null);
-        return;
-    }
-
-}
 
 module.exports = {
     init: function () {
@@ -150,7 +139,7 @@ module.exports = {
             db.query("INSERT INTO `channels` " +
                      "(`name`, `owner`, `time`, `last_loaded`) VALUES (?, ?, ?, ?)",
                      [name, owner, Date.now(), new Date()],
-                     function (err, res) {
+                     function (err, _res) {
                 if (err) {
                     callback(err, null);
                     return;
@@ -218,7 +207,7 @@ module.exports = {
                 }
             });
 
-            callback(err, !Boolean(err));
+            callback(err, !err);
         });
     },
 
@@ -238,6 +227,18 @@ module.exports = {
             }
 
             callback(err, res);
+        });
+    },
+
+    listUserChannelsAsync: owner => {
+        return new Promise((resolve, reject) => {
+            module.exports.listUserChannels(owner, (error, rows) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(rows);
+                }
+            });
         });
     },
 
@@ -328,10 +329,10 @@ module.exports = {
         var replace = "(" + names.map(function () { return "?"; }).join(",") + ")";
 
         /* Last substitution is the channel to select ranks for */
-        names.push(chan);
+        const sub = names.concat([chan]);
 
         db.query("SELECT * FROM `channel_ranks` WHERE name IN " +
-                 replace + " AND channel=?", names,
+                 replace + " AND channel=?", sub,
         function (err, rows) {
             if (err) {
                 callback(err, []);
@@ -439,6 +440,45 @@ module.exports = {
                  "(id, title, seconds, type, meta, channel) " +
                  "VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=id",
                  [media.id, media.title, media.seconds, media.type, meta, chan], callback);
+    },
+
+    /**
+     * Adds a list of media items to the library
+     */
+    addListToLibrary: async function addListToLibrary(chan, list) {
+        if (!valid(chan)) {
+            throw new Error("Invalid channel name");
+        }
+
+        if (list.length > Config.get("playlist.max-items")) {
+            throw new Error("Cannot save list to library: exceeds max-items");
+        }
+
+        const items = list.map(item => ({
+            id: item.id,
+            title: item.title,
+            seconds: item.seconds,
+            type: item.type,
+            meta: JSON.stringify({
+                bitrate: item.meta.bitrate,
+                codec: item.meta.codec,
+                scuri: item.meta.scuri,
+                embed: item.meta.embed,
+                direct: item.meta.direct
+            }),
+            channel: chan
+        }));
+
+        await db.getDB().runTransaction(tx => {
+            const insert = tx.table('channel_libraries')
+                    .insert(items);
+
+            const update = tx.raw(createMySQLDuplicateKeyUpdate(
+                    ['title', 'seconds', 'meta']
+            ));
+
+            return tx.raw(insert.toString() + update.toString());
+        });
     },
 
     /**
