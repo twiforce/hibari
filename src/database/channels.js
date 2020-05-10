@@ -1,7 +1,5 @@
 var db = require("../database");
 var valid = require("../utilities").isValidChannelName;
-var fs = require("fs");
-var path = require("path");
 var Flags = require("../flags");
 var util = require("../utilities");
 import { createMySQLDuplicateKeyUpdate } from '../util/on-duplicate-key-update';
@@ -199,14 +197,6 @@ module.exports = {
                 }
             });
 
-            fs.unlink(path.join(__dirname, "..", "..", "chandump", name),
-                      function (err) {
-                if (err && err.code !== "ENOENT") {
-                    LOGGER.error("Deleting chandump failed:");
-                    LOGGER.error(err);
-                }
-            });
-
             callback(err, !err);
         });
     },
@@ -378,7 +368,7 @@ module.exports = {
         }
 
         db.query("INSERT INTO `channel_ranks` VALUES (?, ?, ?) " +
-                 "ON DUPLICATE KEY UPDATE rank=?",
+                 "ON DUPLICATE KEY UPDATE `rank`=?",
                  [name, rank, chan, rank], callback);
     },
 

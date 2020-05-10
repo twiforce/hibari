@@ -15,7 +15,7 @@ $(window).focus(CyTube.ui.onPageFocus).blur(CyTube.ui.onPageBlur);
 $(".modal").focus(CyTube.ui.onPageFocus);
 
 $("#togglemotd").click(function () {
-    var hidden = $("#motd").css("display") === "none";
+    var hidden = $("#motd")[0].style.display === "none";
     $("#motd").toggle();
     if (hidden) {
         $("#togglemotd").find(".glyphicon-plus")
@@ -122,12 +122,11 @@ CyTube.chatTabCompleteData = {
     context: {}
 };
 
-function chatTabComplete() {
+function chatTabComplete(chatline) {
     if (!CyTube.tabCompleteMethods) {
         console.error('Missing CyTube.tabCompleteMethods!');
         return;
     }
-    var chatline = document.getElementById("chatline");
     var currentText = chatline.value;
     var currentPosition = chatline.selectionEnd;
     if (typeof currentPosition !== 'number' || !chatline.setSelectionRange) {
@@ -199,7 +198,7 @@ $("#chatline").keydown(function(ev) {
     }
     else if(ev.keyCode == 9) { // Tab completion
         try {
-            chatTabComplete();
+            chatTabComplete(ev.target);
         } catch (error) {
             console.error(error);
         }
@@ -269,13 +268,14 @@ $("#library_query").keydown(function(ev) {
 
 $("#youtube_search").click(function () {
     var query = $("#library_query").val().toLowerCase();
-    if(parseMediaLink(query).type !== null) {
+    try {
+        parseMediaLink(query);
         makeAlert("Media Link", "If you already have the link, paste it " +
                   "in the 'Media URL' box under Playlist Controls.  This "+
                   "searchbar works like YouTube's search function.",
                   "alert-danger")
             .insertBefore($("#library"));
-    }
+    } catch (e) {}
 
     socket.emit("searchMedia", {
         source: "yt",
@@ -381,26 +381,50 @@ function queue(pos, src) {
         }
 
         links.forEach(function (link) {
-            var data = parseMediaLink(link);
+            var data;
+
+            try {
+                data = parseMediaLink(link);
+            } catch (error) {
+                Callbacks.queueFail({
+                    link: link,
+                    msg: error.message
+                });
+                return;
+            }
+
             var duration = undefined;
             var title = undefined;
             if (data.type === "fi") {
+                if (data.id.match(/^http:/)) {
+                    Callbacks.queueFail({
+                        link: data.id,
+                        msg: "Raw files must begin with 'https'.  Plain http is not supported."
+                    });
+                    return;
+                }
+
+                // Explicit checks for kissanime and mega.nz since everyone
+                // asks about them
+                if (data.id.match(/kissanime|kimcartoon|kisscartoon/i)) {
+                    Callbacks.queueFail({
+                        link: data.id,
+                        msg: "Kisscartoon and Kissanime are not supported.  See https://git.io/vxS9n" +
+                             " for more information about why these cannot be supported."
+                    });
+                    return;
+                } else if (data.id.match(/mega\.nz/)) {
+                    Callbacks.queueFail({
+                        link: data.id,
+                        msg: "Mega.nz is not supported.  See https://git.io/fx6fz" +
+                             " for more information about why mega.nz cannot be supported."
+                    });
+                    return;
+                }
+
+                // Raw files allow title overrides since the ffprobe tag data
+                // is not always correct.
                 title = $("#addfromurl-title-val").val();
-            } else if (data.type === "vm") {
-                /*
-                 * As of December 2017, vid.me is no longer in service.
-                 * Leaving this temporarily to hopefully avoid confusion
-                 * for people pasting old vid.me links.
-                 *
-                 * TODO: remove at some point in the future
-                 */
-
-                Callbacks.queueFail({
-                    link: link,
-                    msg: "As of December 2017, vid.me is no longer in service."
-                });
-
-                return;
             }
 
             if (data.id == null || data.type == null) {
@@ -457,15 +481,21 @@ $("#mediaurl").keyup(function(ev) {
     if (ev.keyCode === 13) {
         queue("end", "url");
     } else {
-        var url = $("#mediaurl").val().split("?")[0];
-        if (url.match(/^https:\/\/(.*)?\.(flv|mp4|og[gv]|webm|mp3|mov|m4a)$/) ||
-                url.match(/^fi:/)) {
+        var editTitle = false;
+        try {
+            if (parseMediaLink($("#mediaurl").val()).type === "fi") {
+                editTitle = true;
+            }
+        } catch (error) {
+        }
+
+        if (editTitle) {
             var title = $("#addfromurl-title");
             if (title.length === 0) {
                 title = $("<div/>")
                     .attr("id", "addfromurl-title")
                     .appendTo($("#addfromurl"));
-                $("<span/>").text("Title (optional)")
+                $("<span/>").text("Title (optional; for raw files only)")
                     .appendTo(title);
                 $("<input/>").addClass("form-control")
                     .attr("type", "text")
@@ -800,7 +830,7 @@ $("#cs-emotes-import").click(function () {
 
 var toggleUserlist = function () {
     var direction = !USEROPTS.layout.match(/synchtube/) ? "glyphicon-chevron-right" : "glyphicon-chevron-left"
-    if ($("#userlist").css("display") === "none") {
+    if ($("#userlist")[0].style.display === "none") {
         $("#userlist").show();
         $("#userlisttoggle").removeClass(direction).addClass("glyphicon-chevron-down");
     } else {

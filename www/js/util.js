@@ -776,7 +776,7 @@ function applyOpts() {
         else {
             USEROPTS.notifications = "never";
         }
-    }    
+    }
 }
 
 function parseTimeout(t) {
@@ -1468,53 +1468,25 @@ function parseMediaLink(url) {
     /* Raw file */
     var tmp = url.split("?")[0];
     if (tmp.match(/^https?:\/\//)) {
-        if (tmp.match(/^http:/)) {
-            Callbacks.queueFail({
-                link: url,
-                msg: "Raw files must begin with 'https'.  Plain http is not supported."
-            });
-            throw new Error("ERROR_QUEUE_HTTP");
-        } else if (tmp.match(/\.json$/)) {
+        if (tmp.match(/\.json$/)) {
+            // Custom media manifest format
             return {
                 id: url,
                 type: "cm"
             };
-        } else if (tmp.match(/kissanime|kimcartoon|kisscartoon/i)) {
-            Callbacks.queueFail({
-                link: url,
-                msg: "Kisscartoon and Kissanime are not supported.  See https://git.io/vxS9n" +
-                     " for more information about why these cannot be supported."
-            });
-            throw new Error("ERROR_QUEUE_KISS");
-        } else if (tmp.match(/mega\.nz/)) {
-            Callbacks.queueFail({
-                link: url,
-                msg: "Mega.nz is not supported.  See https://git.io/fx6fz" +
-                     " for more information about why mega.nz cannot be supported."
-            });
-            throw new Error("ERROR_QUEUE_MEGA");
-        } else if (tmp.match(/\.(mp4|flv|webm|og[gv]|mp3|mov|m4a)$/)) {
+        } else {
+            // Assume raw file (server will check)
             return {
                 id: url,
                 type: "fi"
             };
-        } else {
-            Callbacks.queueFail({
-                link: url,
-                msg: "The file you are attempting to queue does not match the supported " +
-                     "file extensions mp4, flv, webm, ogg, ogv, mp3, mov, m4a. " +
-                     "For more information about why other filetypes are not supported, " +
-                     "see https://git.io/va9g9"
-            });
-            // Lol I forgot about this hack
-            throw new Error("ERROR_QUEUE_UNSUPPORTED_EXTENSION");
         }
     }
 
-    return {
-        id: null,
-        type: null
-    };
+    throw new Error(
+        'Could not determine video type.  Check https://git.io/fjtOK for a list ' +
+        'of supported media providers.'
+    );
 }
 
 function sendVideoUpdate() {
@@ -1683,13 +1655,18 @@ function addChatMessage(data) {
 
     var isHighlight = false;
     if (CLIENT.name && data.username != CLIENT.name) {
-        if (data.msg.toLowerCase().indexOf(CLIENT.name.toLowerCase()) != -1) {
+        if (highlightsMe(data.msg)) {
             div.addClass("nick-highlight");
             isHighlight = true;
         }
     }
 
     pingMessage(isHighlight, data.username, $(div.children()[2]).text());
+}
+
+function highlightsMe(message) {
+    // TODO: distinguish between text and HTML attributes as noted in #819
+    return message.match(new RegExp("(^|\\b)" + CLIENT.name + "($|\\b)", "gi"));
 }
 
 function trimChatBuffer() {
@@ -2120,11 +2097,20 @@ function waitUntilDefined(obj, key, fn) {
     fn();
 }
 
-function chatDialog(div) {
+/*
+    God I hate supporting IE11
+    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Default_parameters
+    https://caniuse.com/#search=default%20function
+
+    This would be the ideal:
+    function chatDialog(div, zin = "auto") {
+*/
+function chatDialog(div, zin) {
+    if(!zin){ zin = 'auto'; }
     var parent = $("<div/>").addClass("profile-box")
         .css({
             padding: "10px",
-            "z-index": "auto",
+            "z-index": zin,
             position: "absolute"
         })
         .appendTo($("#chatwrap"));
@@ -2837,6 +2823,14 @@ function initPm(user) {
                 meta: meta
             });
             input.val("");
+        } else if(ev.keyCode == 9) { // Tab completion
+            try {
+                chatTabComplete(ev.target);
+            } catch (error) {
+                console.error(error);
+            }
+            ev.preventDefault();
+            return false;
         }
     });
 

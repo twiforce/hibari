@@ -139,7 +139,7 @@ Callbacks = {
             .css("margin-top", "5px")
             .text("Submit")
             .appendTo(div);
-        var parent = chatDialog(div);
+        var parent = chatDialog(div, '9999');
         parent.attr("id", "needpw");
         var sendpw = function () {
             socket.emit("channelPassword", pwbox.val());
@@ -264,6 +264,9 @@ Callbacks = {
                     .attr("rel", "stylesheet")
                     .attr("href", opts.externalcss)
                     .attr("id", "chanexternalcss")
+                    .on("load", function () {
+                        handleVideoResize();
+                    })
                     .appendTo($("head"));
             }
         }
@@ -308,6 +311,9 @@ Callbacks = {
                 $("<style/>").attr("type", "text/css")
                     .attr("id", "chancss")
                     .text(data.css)
+                    .on("load", function () {
+                        handleVideoResize();
+                    })
                     .appendTo($("head"));
             }
 

@@ -3,6 +3,7 @@ var tables = require("./database/tables");
 import * as Metrics from './metrics/metrics';
 import knex from 'knex';
 import { GlobalBanDB } from './db/globalban';
+import { MetadataCacheDB } from './database/metadata_cache';
 import { Summary, Counter } from 'prom-client';
 
 const LOGGER = require('@calzoneman/jsli')('database');
@@ -42,8 +43,7 @@ class Database {
                 },
                 pool: {
                     min: Config.get('mysql.pool-size'),
-                    max: Config.get('mysql.pool-size'),
-                    refreshIdle: false
+                    max: Config.get('mysql.pool-size')
                 },
                 debug: !!process.env.KNEX_DEBUG
             };
@@ -85,6 +85,9 @@ module.exports.init = function (newDB) {
             .then(() => {
                 require('./database/update').checkVersion();
                 module.exports.loadAnnouncement();
+                require('cytube-mediaquery/lib/provider/youtube').setCache(
+                    new MetadataCacheDB(db)
+                );
             }).catch(error => {
                 LOGGER.error(error.stack);
                 process.exit(1);
